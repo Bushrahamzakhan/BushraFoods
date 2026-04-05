@@ -1,0 +1,25 @@
+{
+  "name": "halal-market-online",
+  "description": "Premium multivendor marketplace for Halal-certified products.",
+  "repository": "https://github.com/your-username/halal-market-online",
+  "logo": "https://raw.githubusercontent.com/lucide-icons/lucide/main/icons/store.svg",
+  "keywords": ["node", "react", "vite", "sqlite", "marketplace"],
+  "env": {
+    "NODE_ENV": {
+      "description": "The environment to run the app in.",
+      "value": "production"
+    },
+    "JWT_SECRET": {
+      "description": "A secure random string for authentication.",
+      "generator": "secret"
+    },
+    "ADMIN_SECRET_KEY": {
+      "description": "The secret key for admin registration.",
+      "value": "HALAL_ADMIN_2026"
+    }
+  },
+  "scripts": {
+    "postinstall": "npm run build"
+  },
+  "stack": "container"
+}

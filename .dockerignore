@@ -1,0 +1,11 @@
+node_modules
+dist
+.git
+.env
+database.sqlite
+android
+ios
+capacitor.config.ts
+README.md
+Dockerfile
+.dockerignore

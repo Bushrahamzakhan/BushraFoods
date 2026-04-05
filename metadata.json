@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Halal Market Online",
+  "description": "Premium multivendor marketplace for Halal-certified fresh meats, groceries, and authentic products. Features advanced product variations, real-time tracking, and a professional mobile-friendly interface.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
