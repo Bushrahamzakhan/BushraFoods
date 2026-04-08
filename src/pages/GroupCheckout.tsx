@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { CheckCircle, CreditCard, Users, MapPin, Banknote, ArrowLeft, Info } from 'lucide-react';
-import { PaymentMethod, ShippingDetails } from '../types';
+import { PaymentMethodType, ShippingDetails } from '../types';
 
 export default function GroupCheckout() {
   const { id } = useParams<{ id: string }>();
@@ -12,7 +12,7 @@ export default function GroupCheckout() {
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodType>('card');
   
   const isJoining = location.state?.isJoining || false;
   const groupId = location.state?.groupId || null;
@@ -199,7 +199,7 @@ export default function GroupCheckout() {
                 <CreditCard className="w-5 h-5 text-emerald-600" /> Payment Method
               </h2>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-1 gap-4 mb-6">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('card')}
@@ -211,18 +211,6 @@ export default function GroupCheckout() {
                 >
                   <CreditCard className="w-6 h-6" />
                   <span className="font-semibold">Credit/Debit Card</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('cod')}
-                  className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-colors ${
-                    paymentMethod === 'cod' 
-                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800' 
-                      : 'border-gray-200 hover:border-emerald-200 text-gray-600'
-                  }`}
-                >
-                  <Banknote className="w-6 h-6" />
-                  <span className="font-semibold">Cash on Delivery</span>
                 </button>
               </div>
 

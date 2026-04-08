@@ -12,6 +12,7 @@ import {
   Tooltip, ResponsiveContainer, AreaChart, Area 
 } from 'recharts';
 import { InvestmentOpportunity, InvestmentTier } from '../types';
+import { ensureDate } from '../lib/utils';
 
 export default function InvestorDashboard() {
   const location = useLocation();
@@ -216,7 +217,7 @@ export default function InvestorDashboard() {
                       </div>
                       <div>
                         <h4 className="font-bold text-gray-900 text-sm">{inv.productName}</h4>
-                        <p className="text-xs text-gray-500">{inv.tierName} Tier • {new Date(inv.createdAt).toLocaleDateString()}</p>
+                        <p className="text-xs text-gray-500">{inv.tierName} Tier • {ensureDate(inv.createdAt).toLocaleDateString()}</p>
                       </div>
                     </div>
                     <div className="text-right">
@@ -381,7 +382,7 @@ export default function InvestorDashboard() {
                   <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4">
                       <p className="text-sm font-bold text-gray-900">{inv.productName}</p>
-                      <p className="text-[10px] text-gray-400 font-medium">{new Date(inv.createdAt).toLocaleDateString()}</p>
+                      <p className="text-[10px] text-gray-400 font-medium">{ensureDate(inv.createdAt).toLocaleDateString()}</p>
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-xs font-bold text-gray-600 bg-gray-100 px-2 py-1 rounded-lg">{inv.tierName}</span>
@@ -493,7 +494,7 @@ export default function InvestorDashboard() {
                       </div>
                       <div>
                         <h4 className="font-bold text-gray-900 text-sm">{tx.description}</h4>
-                        <p className="text-xs text-gray-500">{new Date(tx.createdAt).toLocaleString()}</p>
+                        <p className="text-xs text-gray-500">{ensureDate(tx.createdAt).toLocaleString()}</p>
                       </div>
                     </div>
                     <p className={`font-bold text-sm ${tx.amount > 0 ? 'text-green-600' : 'text-red-600'}`}>

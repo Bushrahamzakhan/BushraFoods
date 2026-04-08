@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Star, User as UserIcon, MessageSquare, Send, CheckCircle, Filter, ChevronDown } from 'lucide-react';
 import { Review } from '../types';
 import { useAppContext } from '../context/AppContext';
+import { ensureDate } from '../lib/utils';
 
 interface ReviewSectionProps {
   productId?: string;
@@ -86,7 +87,7 @@ export default function ReviewSection({ productId, vendorId }: ReviewSectionProp
     }
 
     result.sort((a, b) => {
-      if (sortBy === 'newest') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      if (sortBy === 'newest') return ensureDate(b.createdAt).getTime() - ensureDate(a.createdAt).getTime();
       if (sortBy === 'highest') return b.rating - a.rating;
       if (sortBy === 'lowest') return a.rating - b.rating;
       return 0;
@@ -302,7 +303,7 @@ export default function ReviewSection({ productId, vendorId }: ReviewSectionProp
                   <div>
                     <div className="flex flex-wrap items-center gap-2 mb-1">
                       <h5 className="font-bold text-gray-900 text-lg">{review.userName}</h5>
-                      {productId && orders.some(o => o.status === 'delivered' && o.items.some(i => i.productId === productId) && o.userId === review.userId) && (
+                      {productId && orders.some(o => o.status === 'delivered' && o.items.some(i => i.productId === productId) && o.customerId === review.userId) && (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-extrabold rounded-lg uppercase tracking-wider">
                           <CheckCircle className="w-3 h-3" /> Verified Purchase
                         </span>
@@ -318,7 +319,7 @@ export default function ReviewSection({ productId, vendorId }: ReviewSectionProp
                         ))}
                       </div>
                       <span className="text-xs font-bold text-gray-400 ml-2">
-                        {new Date(review.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+                        {ensureDate(review.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
                       </span>
                     </div>
                   </div>

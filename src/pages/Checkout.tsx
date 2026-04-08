@@ -1,15 +1,47 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { CheckCircle, CreditCard, Truck, MapPin, Banknote } from 'lucide-react';
-import { PaymentMethod, ShippingDetails } from '../types';
+import { CheckCircle, CreditCard, Truck, MapPin, Banknote, QrCode, Building2, Wallet, HelpCircle, MessageSquare } from 'lucide-react';
+import { PaymentMethodType, ShippingDetails, User, CartItem } from '../types';
 
 export default function Checkout() {
-  const { cart, placeOrder, currentUser, formatPrice } = useAppContext();
+  const { cart, placeOrder, currentUser, formatPrice, getCartTotal, vendors } = useAppContext();
   const navigate = useNavigate();
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
+  const [vendorPaymentMethods, setVendorPaymentMethods] = useState<Record<string, PaymentMethodType>>({});
+
+  const totalAmount = getCartTotal();
+
+  // Group cart items by vendor
+  const vendorGroups = cart.reduce((groups, item) => {
+    const vendorId = item.product.vendorId;
+    if (!groups[vendorId]) {
+      groups[vendorId] = {
+        items: [],
+        vendor: vendors.find(v => v.id === vendorId)
+      };
+    }
+    groups[vendorId].items.push(item);
+    return groups;
+  }, {} as Record<string, { items: CartItem[], vendor?: User }>);
+
+  // Initialize payment methods
+  useEffect(() => {
+    const initialMethods: Record<string, PaymentMethodType> = { ...vendorPaymentMethods };
+    let changed = false;
+    Object.keys(vendorGroups).forEach(vendorId => {
+      if (!initialMethods[vendorId]) {
+        const vendor = vendorGroups[vendorId].vendor;
+        const firstActive = vendor?.paymentMethods?.find(m => m.isActive);
+        initialMethods[vendorId] = (firstActive?.type as PaymentMethodType) || 'card';
+        changed = true;
+      }
+    });
+    if (changed) {
+      setVendorPaymentMethods(initialMethods);
+    }
+  }, [vendorGroups]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -25,8 +57,6 @@ export default function Checkout() {
     expiry: '',
     cvv: ''
   });
-
-  const totalAmount = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
 
   if (cart.length === 0 && !isSuccess) {
     navigate('/cart');
@@ -60,7 +90,7 @@ export default function Checkout() {
 
     // Simulate payment processing
     setTimeout(() => {
-      placeOrder(shippingDetails, paymentMethod);
+      placeOrder(shippingDetails, vendorPaymentMethods);
       setIsProcessing(false);
       setIsSuccess(true);
     }, 2000);
@@ -142,57 +172,112 @@ export default function Checkout() {
               </div>
             </div>
 
-            {/* Payment Info */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-              <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                <CreditCard className="w-5 h-5 text-green-600" /> Payment Method
+            {/* Payment Info per Vendor */}
+            <div className="space-y-6">
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-green-600" /> Payment Methods
               </h2>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('card')}
-                  className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-colors ${
-                    paymentMethod === 'card' 
-                      ? 'border-green-600 bg-green-50 text-green-800' 
-                      : 'border-gray-200 hover:border-green-200 text-gray-600'
-                  }`}
-                >
-                  <CreditCard className="w-6 h-6" />
-                  <span className="font-semibold">Credit/Debit Card</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('cod')}
-                  className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-colors ${
-                    paymentMethod === 'cod' 
-                      ? 'border-green-600 bg-green-50 text-green-800' 
-                      : 'border-gray-200 hover:border-green-200 text-gray-600'
-                  }`}
-                >
-                  <Banknote className="w-6 h-6" />
-                  <span className="font-semibold">Cash on Delivery</span>
-                </button>
-              </div>
-
-              {paymentMethod === 'card' && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700">Card Number</label>
-                    <input required type="text" name="cardNumber" placeholder="0000 0000 0000 0000" value={formData.cardNumber} onChange={handleInputChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono" />
+              {Object.entries(vendorGroups).map(([vendorId, group]) => (
+                <div key={vendorId} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-gray-900">
+                      Payment for <span className="text-green-600">{group.vendor?.storeName || group.vendor?.name}</span>
+                    </h3>
+                    <span className="text-sm font-medium text-gray-500">
+                      {group.items.length} items • {formatPrice(group.items.reduce((sum, i) => sum + (i.product.price * i.quantity), 0), group.items[0].product.currency)}
+                    </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">Expiry Date</label>
-                      <input required type="text" name="expiry" placeholder="MM/YY" value={formData.expiry} onChange={handleInputChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">CVV</label>
-                      <input required type="text" name="cvv" placeholder="123" value={formData.cvv} onChange={handleInputChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono" />
-                    </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Default Card Option */}
+                    <button
+                      type="button"
+                      onClick={() => setVendorPaymentMethods(prev => ({ ...prev, [vendorId]: 'card' }))}
+                      className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${
+                        vendorPaymentMethods[vendorId] === 'card' 
+                          ? 'border-green-600 bg-green-50 text-green-800' 
+                          : 'border-gray-100 hover:border-green-200 text-gray-600'
+                      }`}
+                    >
+                      <CreditCard className="w-5 h-5" />
+                      <div className="text-left">
+                        <p className="font-bold text-sm">Credit/Debit Card</p>
+                        <p className="text-[10px] opacity-70">Secure online payment</p>
+                      </div>
+                    </button>
+
+                    {/* Vendor Configured Methods */}
+                    {group.vendor?.paymentMethods?.filter(m => m.isActive).map(method => (
+                      <button
+                        key={method.id}
+                        type="button"
+                        onClick={() => setVendorPaymentMethods(prev => ({ ...prev, [vendorId]: method.type }))}
+                        className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${
+                          vendorPaymentMethods[vendorId] === method.type 
+                            ? 'border-green-600 bg-green-50 text-green-800' 
+                            : 'border-gray-100 hover:border-green-200 text-gray-600'
+                        }`}
+                      >
+                        {method.type === 'alipay' || method.type === 'wechat' ? <QrCode className="w-5 h-5" /> : 
+                         method.type === 'bank_transfer' ? <Building2 className="w-5 h-5" /> :
+                         method.type === 'easypaisa' || method.type === 'payoneer' || method.type === 'paypal' ? <Wallet className="w-5 h-5" /> :
+                         <HelpCircle className="w-5 h-5" />}
+                        <div className="text-left">
+                          <p className="font-bold text-sm">{method.name}</p>
+                          <p className="text-[10px] opacity-70 capitalize">{method.type.replace('_', ' ')}</p>
+                        </div>
+                      </button>
+                    ))}
+
+                    {/* Chat for more options */}
+                    <button
+                      type="button"
+                      onClick={() => navigate('/customer', { state: { activeTab: 'messages', openChatWith: vendorId } })}
+                      className="p-4 rounded-xl border-2 border-dashed border-gray-200 flex items-center gap-3 text-gray-400 hover:border-green-200 hover:text-green-600 transition-all"
+                    >
+                      <MessageSquare className="w-5 h-5" />
+                      <div className="text-left">
+                        <p className="font-bold text-sm">Other Methods?</p>
+                        <p className="text-[10px] opacity-70">Chat with vendor</p>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Payment Instructions / Card Form */}
+                  <div className="mt-6 pt-6 border-t border-gray-50">
+                    {vendorPaymentMethods[vendorId] === 'card' ? (
+                      <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Card Number</label>
+                          <input required type="text" name="cardNumber" placeholder="0000 0000 0000 0000" value={formData.cardNumber} onChange={handleInputChange} className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:ring-2 focus:ring-green-500 outline-none font-mono" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Expiry</label>
+                            <input required type="text" name="expiry" placeholder="MM/YY" value={formData.expiry} onChange={handleInputChange} className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:ring-2 focus:ring-green-500 outline-none font-mono" />
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">CVV</label>
+                            <input required type="text" name="cvv" placeholder="123" value={formData.cvv} onChange={handleInputChange} className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:ring-2 focus:ring-green-500 outline-none font-mono" />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <HelpCircle className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-bold text-blue-900">Receipt-Based Payment</p>
+                          <p className="text-xs text-blue-700 mt-1">
+                            After placing your order, you will receive instructions to pay via {vendorPaymentMethods[vendorId]?.replace('_', ' ')}. 
+                            You'll need to upload a screenshot of your payment receipt for the vendor to approve your order.
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
+              ))}
             </div>
 
             <button 
@@ -207,7 +292,7 @@ export default function Checkout() {
               {isProcessing ? (
                 <>Processing Order...</>
               ) : (
-                <>Place Order • {formatPrice(totalAmount, cart[0]?.product?.currency)}</>
+                <>Place Order • {formatPrice(totalAmount)}</>
               )}
             </button>
           </form>
@@ -239,7 +324,7 @@ export default function Checkout() {
             <div className="border-t border-gray-100 pt-4 space-y-3">
               <div className="flex justify-between text-gray-600 text-sm">
                 <span>Subtotal</span>
-                <span>{formatPrice(totalAmount, cart[0]?.product?.currency)}</span>
+                <span>{formatPrice(totalAmount)}</span>
               </div>
               <div className="flex justify-between text-gray-600 text-sm">
                 <span>Shipping</span>
@@ -247,7 +332,7 @@ export default function Checkout() {
               </div>
               <div className="border-t border-gray-100 pt-3 flex justify-between items-center">
                 <span className="text-lg font-bold text-gray-900">Total</span>
-                <span className="text-2xl font-extrabold text-green-700">{formatPrice(totalAmount, cart[0]?.product?.currency)}</span>
+                <span className="text-2xl font-extrabold text-green-700">{formatPrice(totalAmount)}</span>
               </div>
             </div>
             

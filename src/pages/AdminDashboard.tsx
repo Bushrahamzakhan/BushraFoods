@@ -4,17 +4,24 @@ import { useAppContext } from '../context/AppContext';
 import { 
   Users, Store, DollarSign, Clock, CheckCircle, XCircle, AlertCircle, 
   Package, ShoppingBag, Search, Filter, Trash2, Eye, ChevronRight, 
-  TrendingUp, Activity, ShieldCheck, User as UserIcon, Award
+  TrendingUp, Activity, ShieldCheck, User as UserIcon, Award, BarChart3,
+  PieChart as PieChartIcon
 } from 'lucide-react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, PieChart, Pie, Cell
+} from 'recharts';
 import { OrderStatus } from '../types';
+import { ensureDate } from '../lib/utils';
 
-type AdminTab = 'overview' | 'vendors' | 'products' | 'orders' | 'customers' | 'investments' | 'reviews';
+type AdminTab = 'overview' | 'vendors' | 'products' | 'orders' | 'customers' | 'investments' | 'reviews' | 'audit' | 'admins';
 
 export default function AdminDashboard() {
   const { 
-    currentUser, adminStats, adminVendors, adminProducts, adminOrders, adminCustomers, adminInvestments, adminReviews,
-    fetchAdminStats, fetchAdminVendors, fetchAdminProducts, fetchAdminOrders, fetchAdminCustomers, fetchAdminInvestments, fetchAdminReviews,
-    updateVendorStatus, deleteUserAdmin, deleteProductAdmin, deleteReviewAdmin, updateOrderStatusAdmin, recalculateTopRated, formatPrice 
+    currentUser, adminStats, adminVendors, adminProducts, adminOrders, adminCustomers, adminInvestments, adminReviews, auditLogs,
+    fetchAdminStats, fetchAdminVendors, fetchAdminProducts, fetchAdminOrders, fetchAdminCustomers, fetchAdminInvestments, fetchAdminReviews, fetchAuditLogs,
+    updateVendorStatus, deleteUserAdmin, deleteProductAdmin, deleteReviewAdmin, updateOrderStatusAdmin, recalculateTopRated, formatPrice,
+    updateUserRole, updateUserStatus
   } = useAppContext();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
@@ -33,7 +40,7 @@ export default function AdminDashboard() {
   });
 
   useEffect(() => {
-    if (currentUser?.role === 'admin') {
+    if (currentUser?.role === 'admin' || currentUser?.email === 'bushraanwar854@gmail.com') {
       fetchAdminStats();
       fetchAdminVendors();
       fetchAdminProducts();
@@ -41,10 +48,11 @@ export default function AdminDashboard() {
       fetchAdminCustomers();
       fetchAdminInvestments();
       fetchAdminReviews();
+      fetchAuditLogs();
     }
   }, [currentUser]);
 
-  if (!currentUser || currentUser.role !== 'admin') {
+  if (!currentUser || (currentUser.role !== 'admin' && currentUser.email !== 'bushraanwar854@gmail.com')) {
     return <Navigate to="/" />;
   }
 
@@ -85,34 +93,45 @@ export default function AdminDashboard() {
   };
 
   const filteredVendors = adminVendors.filter(v => 
-    v.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    v.storeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.email.toLowerCase().includes(searchTerm.toLowerCase())
+    (v.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (v.storeName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (v.email || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const filteredProducts = adminProducts.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.vendorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.category.toLowerCase().includes(searchTerm.toLowerCase())
+    (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (p.vendorName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (p.category || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const filteredOrders = adminOrders.filter(o => 
-    o.id.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    o.customerName.toLowerCase().includes(searchTerm.toLowerCase())
+    (o.id || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (o.customerName || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const isSuperAdmin = currentUser?.email === 'bushraanwar854@gmail.com';
+
+  const filteredAdmins = adminCustomers.filter(c => 
+    c.role === 'admin' || c.role === 'moderator' || c.role === 'support'
+  ).filter(a => 
+    (a.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (a.email || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const filteredCustomers = adminCustomers.filter(c => 
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    c.email.toLowerCase().includes(searchTerm.toLowerCase())
+    c.role !== 'admin' && c.role !== 'moderator' && c.role !== 'support'
+  ).filter(c => 
+    (c.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (c.email || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const filteredReviews = adminReviews.filter(r => 
-    r.comment.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    r.userName.toLowerCase().includes(searchTerm.toLowerCase())
+    (r.comment || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (r.userName || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const filteredOpportunities = adminInvestments.opportunities.filter(o => 
-    o.productName.toLowerCase().includes(searchTerm.toLowerCase())
+    (o.productName || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -158,27 +177,37 @@ export default function AdminDashboard() {
             <ShieldCheck className="w-5 h-5" />
             <span className="uppercase tracking-widest text-xs">Administrator Panel</span>
           </div>
-          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Control Center</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Control Center</h1>
+            {currentUser?.email === 'bushraanwar854@gmail.com' && (
+              <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-[10px] font-black uppercase tracking-widest border border-amber-200 flex items-center gap-1">
+                <Award className="w-3 h-3" /> Super Admin
+              </span>
+            )}
+          </div>
           <p className="text-gray-500 mt-1">Global platform management and oversight.</p>
         </div>
         
         <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
-          {(['overview', 'vendors', 'products', 'orders', 'customers', 'investments', 'reviews'] as AdminTab[]).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => {
-                setActiveTab(tab);
-                setSearchTerm('');
-              }}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all capitalize whitespace-nowrap ${
-                activeTab === tab 
-                  ? 'bg-emerald-600 text-white shadow-md' 
-                  : 'text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
+          {(['overview', 'vendors', 'products', 'orders', 'customers', 'investments', 'reviews', 'audit', 'admins'] as AdminTab[]).map((tab) => {
+            if (tab === 'admins' && !isSuperAdmin) return null;
+            return (
+              <button
+                key={tab}
+                onClick={() => {
+                  setActiveTab(tab);
+                  setSearchTerm('');
+                }}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all capitalize whitespace-nowrap ${
+                  activeTab === tab 
+                    ? 'bg-emerald-600 text-white shadow-md' 
+                    : 'text-gray-500 hover:bg-gray-50'
+                }`}
+              >
+                {tab}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -239,18 +268,108 @@ export default function AdminDashboard() {
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden group">
               <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:scale-110 transition-transform">
-                <ShieldCheck className="w-24 h-24" />
+                <Activity className="w-24 h-24" />
               </div>
               <div className="flex items-center gap-4 mb-4">
-                <div className="p-3 bg-indigo-100 rounded-xl text-indigo-600">
-                  <ShieldCheck className="w-6 h-6" />
+                <div className="p-3 bg-emerald-100 rounded-xl text-emerald-600">
+                  <Activity className="w-6 h-6" />
                 </div>
-                <span className="text-sm font-bold text-gray-500 uppercase tracking-wider">Platform Commission</span>
+                <span className="text-sm font-bold text-gray-500 uppercase tracking-wider">System Status</span>
               </div>
-              <p className="text-3xl font-black text-gray-900">{formatPrice(adminStats?.totalCommission || 0)}</p>
-              <div className="mt-4 flex items-center gap-1 text-indigo-600 text-xs font-bold">
-                <Activity className="w-3 h-3" />
-                <span>5% service fee applied</span>
+              <p className="text-3xl font-black text-emerald-600">Healthy</p>
+              <div className="mt-4 flex items-center gap-1 text-gray-500 text-xs font-bold">
+                <Clock className="w-3 h-3" />
+                <span>Uptime: 99.9%</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Analytics Section */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-emerald-600" />
+                  Revenue Growth
+                </h3>
+                <select className="text-xs font-bold bg-gray-50 border-0 rounded-lg px-3 py-1">
+                  <option>Last 7 Days</option>
+                  <option>Last 30 Days</option>
+                </select>
+              </div>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={[
+                    { name: 'Mon', revenue: 4000 },
+                    { name: 'Tue', revenue: 3000 },
+                    { name: 'Wed', revenue: 2000 },
+                    { name: 'Thu', revenue: 2780 },
+                    { name: 'Fri', revenue: 1890 },
+                    { name: 'Sat', revenue: 2390 },
+                    { name: 'Sun', revenue: 3490 },
+                  ]}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9ca3af' }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9ca3af' }} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                      cursor={{ fill: '#f9fafb' }}
+                    />
+                    <Bar dataKey="revenue" fill="#10b981" radius={[4, 4, 0, 0]} barSize={32} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-6">
+                <PieChartIcon className="w-5 h-5 text-blue-600" />
+                User Distribution
+              </h3>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: 'Customers', value: adminStats?.totalCustomers || 0 },
+                        { name: 'Vendors', value: adminStats?.totalVendors || 0 },
+                        { name: 'Investors', value: adminInvestments?.opportunities?.length || 0 },
+                      ]}
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      <Cell fill="#3b82f6" />
+                      <Cell fill="#8b5cf6" />
+                      <Cell fill="#f59e0b" />
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-4 space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                    <span className="text-gray-600">Customers</span>
+                  </div>
+                  <span className="font-bold">{adminStats?.totalCustomers || 0}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+                    <span className="text-gray-600">Vendors</span>
+                  </div>
+                  <span className="font-bold">{adminStats?.totalVendors || 0}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+                    <span className="text-gray-600">Investors</span>
+                  </div>
+                  <span className="font-bold">{adminInvestments?.opportunities?.length || 0}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -390,6 +509,7 @@ export default function AdminDashboard() {
                   <tr>
                     <th className="px-6 py-4 font-bold">Vendor / Store</th>
                     <th className="px-6 py-4 font-bold">Contact</th>
+                    <th className="px-6 py-4 font-bold">Role</th>
                     <th className="px-6 py-4 font-bold">Status</th>
                     <th className="px-6 py-4 font-bold">Joined</th>
                     <th className="px-6 py-4 font-bold text-right">Actions</th>
@@ -404,6 +524,33 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">{vendor.email}</td>
                       <td className="px-6 py-4">
+                        <select 
+                          value={vendor.role}
+                          onChange={async (e) => {
+                            const newRole = e.target.value as any;
+                            setConfirmModal({
+                              isOpen: true,
+                              title: 'Change User Role?',
+                              message: `Are you sure you want to change ${vendor.name}'s role to ${newRole}?`,
+                              onConfirm: async () => {
+                                await updateUserRole(vendor.id, newRole, vendor.name);
+                                showSuccess(`Vendor ${vendor.name} role updated to ${newRole}.`);
+                                fetchAdminVendors();
+                                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                              }
+                            });
+                          }}
+                          className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-lg border-0 bg-gray-100 focus:ring-2 focus:ring-emerald-500"
+                          disabled={!isSuperAdmin}
+                        >
+                          <option value="vendor">Vendor</option>
+                          <option value="customer">Customer</option>
+                          {isSuperAdmin && <option value="moderator">Moderator</option>}
+                          {isSuperAdmin && <option value="support">Support</option>}
+                          {isSuperAdmin && <option value="admin">Admin</option>}
+                        </select>
+                      </td>
+                      <td className="px-6 py-4">
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
                           vendor.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
                           vendor.status === 'pending' ? 'bg-amber-100 text-amber-700' :
@@ -413,7 +560,7 @@ export default function AdminDashboard() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">
-                        {new Date(vendor.createdAt).toLocaleDateString()}
+                        {ensureDate(vendor.createdAt).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end gap-2">
@@ -511,15 +658,40 @@ export default function AdminDashboard() {
                           <option value="preparing">Preparing</option>
                           <option value="shipped">Shipped</option>
                           <option value="delivered">Delivered</option>
+                          <option value="payment_rejected">Payment Rejected</option>
                         </select>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">
-                        {new Date(order.createdAt).toLocaleDateString()}
+                        {ensureDate(order.createdAt).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button className="p-2 text-gray-400 hover:text-emerald-600 transition-colors">
-                          <Eye className="w-5 h-5" />
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          {order.paymentStatus === 'receipt_uploaded' && (
+                            <div className="flex items-center gap-1 text-blue-600" title="Receipt Pending Review">
+                              <AlertCircle className="w-4 h-4" />
+                            </div>
+                          )}
+                          <button 
+                            onClick={() => {
+                              // Show order details modal with payment info
+                              setConfirmModal({
+                                isOpen: true,
+                                title: `Order Details #${order.id.slice(0, 8).toUpperCase()}`,
+                                message: `Payment Status: ${order.paymentStatus || 'N/A'}\nPayment Method: ${order.paymentMethod || 'N/A'}\nTotal: ${formatPrice(order.totalAmount, order.currency)}\n\n${order.paymentReceipt ? 'Receipt image is available for review.' : 'No receipt uploaded.'}`,
+                                onConfirm: () => {
+                                  if (order.paymentReceipt) {
+                                    window.open(order.paymentReceipt.imageUrl, '_blank');
+                                  }
+                                  setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                }
+                              });
+                            }}
+                            className="p-2 text-gray-400 hover:text-emerald-600 transition-colors"
+                            title="View Details"
+                          >
+                            <Eye className="w-5 h-5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -533,7 +705,7 @@ export default function AdminDashboard() {
                   <tr>
                     <th className="px-6 py-4 font-bold">Customer Name</th>
                     <th className="px-6 py-4 font-bold">Email</th>
-                    <th className="px-6 py-4 font-bold">Joined</th>
+                    <th className="px-6 py-4 font-bold">Role</th>
                     <th className="px-6 py-4 font-bold">Status</th>
                     <th className="px-6 py-4 font-bold text-right">Actions</th>
                   </tr>
@@ -550,16 +722,71 @@ export default function AdminDashboard() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">{customer.email}</td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        {new Date(customer.createdAt).toLocaleDateString()}
+                      <td className="px-6 py-4">
+                        <select 
+                          value={customer.role}
+                          onChange={async (e) => {
+                            const newRole = e.target.value as any;
+                            setConfirmModal({
+                              isOpen: true,
+                              title: 'Change User Role?',
+                              message: `Are you sure you want to change ${customer.name}'s role to ${newRole}?`,
+                              onConfirm: async () => {
+                                await updateUserRole(customer.id, newRole, customer.name);
+                                showSuccess(`User ${customer.name} role updated to ${newRole}.`);
+                                fetchAdminCustomers();
+                                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                              }
+                            });
+                          }}
+                          className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-lg border-0 bg-gray-100 focus:ring-2 focus:ring-emerald-500"
+                        >
+                          <option value="customer">Customer</option>
+                          <option value="vendor">Vendor</option>
+                          <option value="investor">Investor</option>
+                          {isSuperAdmin && <option value="moderator">Moderator</option>}
+                          {isSuperAdmin && <option value="support">Support</option>}
+                          {isSuperAdmin && <option value="admin">Admin</option>}
+                        </select>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold uppercase">Active</span>
+                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
+                          customer.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {customer.status || 'active'}
+                        </span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button onClick={() => handleDeleteUser(customer.id, customer.name)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg" title="Delete Account">
-                          <Trash2 className="w-5 h-5" />
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          {customer.status !== 'suspended' ? (
+                            <button 
+                              onClick={async () => {
+                                await updateUserStatus(customer.id, 'suspended', customer.name);
+                                showSuccess(`User ${customer.name} suspended.`);
+                                fetchAdminCustomers();
+                              }}
+                              className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg" 
+                              title="Suspend User"
+                            >
+                              <XCircle className="w-5 h-5" />
+                            </button>
+                          ) : (
+                            <button 
+                              onClick={async () => {
+                                await updateUserStatus(customer.id, 'active', customer.name);
+                                showSuccess(`User ${customer.name} activated.`);
+                                fetchAdminCustomers();
+                              }}
+                              className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg" 
+                              title="Activate User"
+                            >
+                              <CheckCircle className="w-5 h-5" />
+                            </button>
+                          )}
+                          <button onClick={() => handleDeleteUser(customer.id, customer.name)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg" title="Delete Account">
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -634,7 +861,7 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">{review.comment}</td>
                       <td className="px-6 py-4 text-sm text-gray-500">
-                        {new Date(review.createdAt).toLocaleDateString()}
+                        {ensureDate(review.createdAt).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button 
@@ -654,6 +881,140 @@ export default function AdminDashboard() {
                         >
                           <Trash2 className="w-5 h-5" />
                         </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {activeTab === 'audit' && (
+              <table className="w-full text-left">
+                <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                  <tr>
+                    <th className="px-6 py-4 font-bold">Action</th>
+                    <th className="px-6 py-4 font-bold">Performed By</th>
+                    <th className="px-6 py-4 font-bold">Target User</th>
+                    <th className="px-6 py-4 font-bold">Details</th>
+                    <th className="px-6 py-4 font-bold">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {auditLogs.filter(log => 
+                    (log.action || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (log.performedByName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (log.targetUserName || '').toLowerCase().includes(searchTerm.toLowerCase())
+                  ).map(log => (
+                    <tr key={log.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-wider ${
+                          log.action.includes('GRANT') || log.action.includes('ACTIVATE') ? 'bg-emerald-100 text-emerald-700' :
+                          log.action.includes('REVOKE') || log.action.includes('SUSPEND') ? 'bg-red-100 text-red-700' :
+                          'bg-blue-100 text-blue-700'
+                        }`}>
+                          {log.action.replace(/_/g, ' ')}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm font-bold text-gray-900">{log.performedByName}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{log.targetUserName}</td>
+                      <td className="px-6 py-4 text-xs text-gray-500 italic">{log.details}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {ensureDate(log.createdAt).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {activeTab === 'admins' && isSuperAdmin && (
+              <table className="w-full text-left">
+                <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                  <tr>
+                    <th className="px-6 py-4 font-bold">Admin Name</th>
+                    <th className="px-6 py-4 font-bold">Email</th>
+                    <th className="px-6 py-4 font-bold">Role</th>
+                    <th className="px-6 py-4 font-bold">Status</th>
+                    <th className="px-6 py-4 font-bold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredAdmins.map(admin => (
+                    <tr key={admin.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 text-xs font-bold">
+                            {admin.name[0]}
+                          </div>
+                          <div className="font-bold text-gray-900 text-sm">{admin.name}</div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{admin.email}</td>
+                      <td className="px-6 py-4">
+                        <select 
+                          value={admin.role}
+                          onChange={async (e) => {
+                            const newRole = e.target.value as any;
+                            setConfirmModal({
+                              isOpen: true,
+                              title: 'Change Admin Role?',
+                              message: `Are you sure you want to change ${admin.name}'s role to ${newRole}?`,
+                              onConfirm: async () => {
+                                await updateUserRole(admin.id, newRole, admin.name);
+                                showSuccess(`Admin ${admin.name} role updated to ${newRole}.`);
+                                fetchAdminCustomers();
+                                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                              }
+                            });
+                          }}
+                          className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-lg border-0 bg-amber-50 text-amber-700 focus:ring-2 focus:ring-amber-500"
+                        >
+                          <option value="moderator">Moderator</option>
+                          <option value="support">Support</option>
+                          <option value="admin">Admin</option>
+                          <option value="customer">Demote to Customer</option>
+                        </select>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
+                          admin.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {admin.status || 'active'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          {admin.email !== 'bushraanwar854@gmail.com' && (
+                            <>
+                              {admin.status !== 'suspended' ? (
+                                <button 
+                                  onClick={async () => {
+                                    await updateUserStatus(admin.id, 'suspended', admin.name);
+                                    showSuccess(`Admin ${admin.name} suspended.`);
+                                    fetchAdminCustomers();
+                                  }}
+                                  className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg" 
+                                >
+                                  <XCircle className="w-5 h-5" />
+                                </button>
+                              ) : (
+                                <button 
+                                  onClick={async () => {
+                                    await updateUserStatus(admin.id, 'active', admin.name);
+                                    showSuccess(`Admin ${admin.name} activated.`);
+                                    fetchAdminCustomers();
+                                  }}
+                                  className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg" 
+                                >
+                                  <CheckCircle className="w-5 h-5" />
+                                </button>
+                              )}
+                              <button onClick={() => handleDeleteUser(admin.id, admin.name)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg">
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

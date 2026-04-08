@@ -1,0 +1,227 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique user ID" },
+        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "photoURL": { "type": "string", "description": "User profile photo URL" },
+        "role": { "type": "string", "enum": ["buyer", "seller", "admin", "vendor", "customer", "investor", "moderator", "support"], "description": "User role in the marketplace" },
+        "status": { "type": "string", "description": "User status (e.g., active, suspended)" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Account creation timestamp" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "System audit log for administrative actions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "action": { "type": "string", "description": "The action performed (e.g., 'GRANT_ADMIN', 'REVOKE_ADMIN')" },
+        "performedBy": { "type": "string", "description": "UID of the admin who performed the action" },
+        "performedByName": { "type": "string", "description": "Name of the admin who performed the action" },
+        "targetUserId": { "type": "string", "description": "UID of the user affected by the action" },
+        "targetUserName": { "type": "string", "description": "Name of the user affected by the action" },
+        "details": { "type": "string", "description": "Additional details about the action" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["action", "performedBy", "targetUserId", "createdAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Marketplace product listing",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique product ID" },
+        "title": { "type": "string", "description": "Product title" },
+        "description": { "type": "string", "description": "Product description" },
+        "price": { "type": "number", "description": "Product price" },
+        "category": { "type": "string", "description": "Product category" },
+        "image": { "type": "string", "description": "Product image URL" },
+        "sellerId": { "type": "string", "description": "ID of the seller" },
+        "sellerName": { "type": "string", "description": "Name of the seller" },
+        "stock": { "type": "integer", "description": "Available stock" },
+        "isHalal": { "type": "boolean", "description": "Halal certification status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Listing creation timestamp" }
+      },
+      "required": ["title", "price", "sellerId", "category"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Marketplace transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique order ID" },
+        "productId": { "type": "string", "description": "ID of the product ordered" },
+        "productTitle": { "type": "string", "description": "Title of the product ordered" },
+        "buyerId": { "type": "string", "description": "ID of the buyer" },
+        "sellerId": { "type": "string", "description": "ID of the seller" },
+        "quantity": { "type": "integer", "description": "Quantity ordered" },
+        "totalPrice": { "type": "number", "description": "Total price of the order" },
+        "status": { "type": "string", "enum": ["pending", "processing", "shipped", "delivered", "cancelled"], "description": "Order status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Order creation timestamp" }
+      },
+      "required": ["productId", "buyerId", "sellerId", "quantity", "totalPrice", "status"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Product review and rating",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique review ID" },
+        "productId": { "type": "string", "description": "ID of the product reviewed" },
+        "userId": { "type": "string", "description": "ID of the reviewer" },
+        "userName": { "type": "string", "description": "Name of the reviewer" },
+        "rating": { "type": "integer", "description": "Rating from 1 to 5" },
+        "comment": { "type": "string", "description": "Review comment" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Review creation timestamp" }
+      },
+      "required": ["productId", "userId", "rating"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User notification",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "message", "type", "isRead"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Chat conversation metadata",
+      "type": "object",
+      "properties": {
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "participantNames": { "type": "object" },
+        "participantImages": { "type": "object" },
+        "lastMessage": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "unreadCounts": { "type": "object" }
+      },
+      "required": ["participants", "participantNames", "updatedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Chat message",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "content": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "receiverId", "content", "isRead"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "Product subscription",
+      "type": "object",
+      "properties": {
+        "customerId": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "vendorId": { "type": "string" },
+        "frequency": { "type": "string", "enum": ["daily", "weekly", "monthly"] },
+        "quantity": { "type": "integer" },
+        "price": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "paused", "cancelled"] },
+        "nextDelivery": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["customerId", "productId", "vendorId", "frequency", "quantity", "price", "status"]
+    },
+    "GroupPurchase": {
+      "title": "GroupPurchase",
+      "description": "Group purchase opportunity",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "vendorId": { "type": "string" },
+        "targetMembers": { "type": "integer" },
+        "currentMembers": { "type": "integer" },
+        "price": { "type": "number" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["open", "completed", "expired"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "vendorId", "targetMembers", "currentMembers", "price", "expiresAt", "status"]
+    },
+    "InvestmentOpportunity": {
+      "title": "InvestmentOpportunity",
+      "description": "Investment opportunity",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "vendorId": { "type": "string" },
+        "fundingGoal": { "type": "number" },
+        "currentFunding": { "type": "number" },
+        "totalUnits": { "type": "integer" },
+        "profitSharingPct": { "type": "number" },
+        "riskLevel": { "type": "string", "enum": ["low", "medium", "high"] },
+        "status": { "type": "string", "enum": ["active", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "tiers": { "type": "array" }
+      },
+      "required": ["productId", "vendorId", "fundingGoal", "currentFunding", "totalUnits", "profitSharingPct", "riskLevel", "status"]
+    },
+    "Investment": {
+      "title": "Investment",
+      "description": "User investment",
+      "type": "object",
+      "properties": {
+        "opportunityId": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "investorId": { "type": "string" },
+        "tierId": { "type": "string" },
+        "tierName": { "type": "string" },
+        "amount": { "type": "number" },
+        "expectedReturnPct": { "type": "number" },
+        "earnedSoFar": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["opportunityId", "productId", "investorId", "tierId", "amount", "status"]
+    },
+    "InvestorWallet": {
+      "title": "InvestorWallet",
+      "description": "User investment wallet",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "balance": { "type": "number" },
+        "totalEarned": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "balance", "totalEarned"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profile document" },
+    "/products/{productId}": { "schema": "Product", "description": "Product listing document" },
+    "/orders/{orderId}": { "schema": "Order", "description": "Order transaction document" },
+    "/reviews/{reviewId}": { "schema": "Review", "description": "Product review document" },
+    "/notifications/{notificationId}": { "schema": "Notification", "description": "User notification document" },
+    "/conversations/{conversationId}": { "schema": "Conversation", "description": "Chat conversation document" },
+    "/conversations/{conversationId}/messages/{messageId}": { "schema": "Message", "description": "Chat message document" },
+    "/subscriptions/{subscriptionId}": { "schema": "Subscription", "description": "Product subscription document" },
+    "/groupPurchases/{purchaseId}": { "schema": "GroupPurchase", "description": "Group purchase document" },
+    "/investmentOpportunities/{opportunityId}": { "schema": "InvestmentOpportunity", "description": "Investment opportunity document" },
+    "/investments/{investmentId}": { "schema": "Investment", "description": "User investment document" },
+    "/investorWallets/{userId}": { "schema": "InvestorWallet", "description": "User investment wallet document" },
+    "/auditLogs/{logId}": { "schema": "AuditLog", "description": "System audit log document" }
+  }
+}

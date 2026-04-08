@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
+import { ensureDate } from '../lib/utils';
 import { 
   Plus, Edit2, Trash2, Package, DollarSign, ShoppingBag, 
   Clock, CheckCircle, Truck, MapPin, X, TrendingUp, 
   AlertTriangle, BarChart2, LayoutDashboard, MessageSquare,
   ChevronDown, ChevronUp, Image as ImageIcon, Settings, Award, Users,
-  ChevronRight
+  ChevronRight, Eye, EyeOff, Lock, CreditCard
 } from 'lucide-react';
-import { Product, OrderStatus, VariationType, VariationCombination, SUPPORTED_CURRENCIES } from '../types';
+import { Product, OrderStatus, VariationType, VariationCombination, SUPPORTED_CURRENCIES, VendorPaymentMethod, PaymentMethodType } from '../types';
 import { COUNTRIES, FRESHNESS_OPTIONS, CATEGORIES } from '../constants';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
@@ -21,11 +22,13 @@ export default function VendorDashboard() {
     currentUser, products, addProduct, updateProduct, deleteProduct, 
     orders, updateOrderStatus, updateVendorProfile, formatPrice, 
     convertPrice, conversations, subscriptions, groupPurchases, 
-    createInvestmentOpportunity, investmentOpportunities, vendorInvestments 
+    createInvestmentOpportunity, investmentOpportunities, vendorInvestments,
+    updatePassword, addVendorPaymentMethod, updateVendorPaymentMethod, 
+    deleteVendorPaymentMethod, reviewPaymentReceipt
   } = useAppContext();
   const location = useLocation();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'orders' | 'profile' | 'messages' | 'subscriptions' | 'groups' | 'investments'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'orders' | 'profile' | 'messages' | 'subscriptions' | 'groups' | 'investments' | 'payment_settings'>('dashboard');
   const [selectedChatUserId, setSelectedChatUserId] = useState<string | null>(null);
   const [isAddingInvestment, setIsAddingInvestment] = useState(false);
   const [investmentFormData, setInvestmentFormData] = useState({
@@ -89,6 +92,63 @@ export default function VendorDashboard() {
     coverImage: currentUser?.coverImage || ''
   });
 
+  const [passwordData, setPasswordData] = useState({
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+
+  const [isAddingPaymentMethod, setIsAddingPaymentMethod] = useState(false);
+  const [editingPaymentMethod, setEditingPaymentMethod] = useState<VendorPaymentMethod | null>(null);
+  const [paymentMethodForm, setPaymentMethodForm] = useState<Omit<VendorPaymentMethod, 'id'>>({
+    type: 'bank_transfer',
+    name: '',
+    details: '',
+    qrCodeUrl: '',
+    instructions: '',
+    isActive: true
+  });
+
+  const handlePaymentMethodSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingPaymentMethod) {
+        await updateVendorPaymentMethod({ ...paymentMethodForm, id: editingPaymentMethod.id });
+      } else {
+        await addVendorPaymentMethod(paymentMethodForm);
+      }
+      setIsAddingPaymentMethod(false);
+      setEditingPaymentMethod(null);
+      setPaymentMethodForm({
+        type: 'bank_transfer',
+        name: '',
+        details: '',
+        qrCodeUrl: '',
+        instructions: '',
+        isActive: true
+      });
+      setSuccessMessage('Payment method saved successfully');
+    } catch (err) {
+      setErrorMessage('Failed to save payment method');
+    }
+  };
+
+  const handleEditPaymentMethod = (method: VendorPaymentMethod) => {
+    setEditingPaymentMethod(method);
+    setPaymentMethodForm({
+      type: method.type,
+      name: method.name,
+      details: method.details,
+      qrCodeUrl: method.qrCodeUrl || '',
+      instructions: method.instructions || '',
+      isActive: method.isActive
+    });
+    setIsAddingPaymentMethod(true);
+  };
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+
   if (!currentUser || currentUser.role !== 'vendor') {
     return <Navigate to="/login" />;
   }
@@ -113,12 +173,37 @@ export default function VendorDashboard() {
     }
   };
 
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(false);
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setPasswordError("Passwords do not match");
+      return;
+    }
+
+    if (passwordData.newPassword.length < 6) {
+      setPasswordError("Password must be at least 6 characters");
+      return;
+    }
+
+    try {
+      await updatePassword(passwordData.newPassword);
+      setPasswordSuccess(true);
+      setPasswordData({ newPassword: '', confirmPassword: '' });
+      setTimeout(() => setPasswordSuccess(false), 5000);
+    } catch (err: any) {
+      setPasswordError(err.message || "Failed to update password. You may need to re-authenticate.");
+    }
+  };
+
   const myProducts = products.filter(p => p.vendorId === currentUser.id);
-  const myOrders = orders.filter(o => o.vendorId === currentUser.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const myOrders = orders.filter(o => o.vendorId === currentUser.id).sort((a, b) => ensureDate(b.createdAt).getTime() - ensureDate(a.createdAt).getTime());
 
   // Analytics Data
   const totalRevenue = myOrders.filter(o => o.status === 'delivered').reduce((sum, order) => {
-    const orderCurrency = order.items[0]?.product?.currency || 'USD';
+    const orderCurrency = order.items[0]?.currency || 'USD';
     return sum + convertPrice(order.totalAmount, orderCurrency, 'USD');
   }, 0);
   
@@ -129,15 +214,15 @@ export default function VendorDashboard() {
 
   // Generate chart data from orders
   const chartData = Array.from({ length: 7 }, (_, i) => {
-    const date = new Date();
+    const date = ensureDate(new Date());
     date.setDate(date.getDate() - (6 - i));
     const dateStr = date.toLocaleDateString('en-US', { weekday: 'short' });
     const dayOrders = myOrders.filter(o => 
-      new Date(o.createdAt).toLocaleDateString() === date.toLocaleDateString() && 
+      ensureDate(o.createdAt).toLocaleDateString() === date.toLocaleDateString() && 
       o.status === 'delivered'
     );
     const amount = dayOrders.reduce((sum, o) => {
-      const orderCurrency = o.items[0]?.product?.currency || 'USD';
+      const orderCurrency = o.items[0]?.currency || 'USD';
       return sum + convertPrice(o.totalAmount, orderCurrency, 'USD');
     }, 0);
     return { name: dateStr, sales: amount };
@@ -330,7 +415,7 @@ export default function VendorDashboard() {
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">Investor #{investment.investorId.slice(0, 8).toUpperCase()}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{investment.productName}</td>
                       <td className="px-6 py-4 text-sm font-bold text-gray-900">{formatPrice(investment.amount)}</td>
-                      <td className="px-6 py-4 text-sm text-gray-500">{new Date(investment.createdAt).toLocaleDateString()}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500">{ensureDate(investment.createdAt).toLocaleDateString()}</td>
                     </tr>
                   ))
                 )}
@@ -441,12 +526,14 @@ export default function VendorDashboard() {
       variationTypes: variationTypes.filter(v => v.name && v.options.length > 0),
       variationCombinations: variationCombinations,
       isHalalCertified: true,
-      groupPrice: formData.groupPrice ? parseFloat(formData.groupPrice) : undefined,
-      targetMembers: formData.targetMembers ? parseInt(formData.targetMembers, 10) : undefined,
+      groupPrice: formData.groupPrice ? parseFloat(formData.groupPrice) : null,
+      targetMembers: formData.targetMembers ? parseInt(formData.targetMembers, 10) : null,
       originCountry: formData.originCountry,
       freshness: formData.freshness,
       availabilityScope: formData.availabilityScope as any,
       availabilityDescription: formData.availabilityDescription,
+      rating: 0,
+      reviewCount: 0
     };
 
     try {
@@ -524,6 +611,7 @@ export default function VendorDashboard() {
       case 'preparing': return 'bg-purple-100 text-purple-800';
       case 'shipped': return 'bg-indigo-100 text-indigo-800';
       case 'delivered': return 'bg-green-100 text-green-800';
+      case 'payment_rejected': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -614,6 +702,12 @@ export default function VendorDashboard() {
             Investments
           </button>
           <button 
+            onClick={() => setActiveTab('payment_settings')}
+            className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'payment_settings' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+          >
+            Payments
+          </button>
+          <button 
             onClick={() => setActiveTab('profile')}
             className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'profile' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
           >
@@ -662,7 +756,7 @@ export default function VendorDashboard() {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">{sub.customerId}</td>
                     <td className="px-6 py-4 text-sm text-gray-600 capitalize">{sub.frequency}</td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{new Date(sub.nextDelivery).toLocaleDateString()}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{ensureDate(sub.nextDelivery).toLocaleDateString()}</td>
                     <td className="px-6 py-4">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${
                         sub.status === 'active' ? 'bg-green-100 text-green-700' :
@@ -977,7 +1071,7 @@ export default function VendorDashboard() {
                   <img src={group.productImageUrl} alt={group.productName} className="w-12 h-12 rounded-xl object-cover" />
                   <div>
                     <h3 className="font-bold text-gray-900 line-clamp-1">{group.productName}</h3>
-                    <p className="text-xs text-gray-500">Ends: {new Date(group.expiresAt).toLocaleDateString()}</p>
+                    <p className="text-xs text-gray-500">Ends: {ensureDate(group.expiresAt).toLocaleDateString()}</p>
                   </div>
                 </div>
                 <div className="bg-gray-50 p-4 rounded-xl">
@@ -1103,7 +1197,24 @@ export default function VendorDashboard() {
                 setIsAddingProduct(!isAddingProduct);
                 if (!isAddingProduct) {
                   setEditingProduct(null);
-                  setFormData({ name: '', description: '', price: '', currency: 'USD', category: 'Fresh Items', imageUrl: '', stock: '', tags: '', availableCountries: '', availableCities: '', groupPrice: '', targetMembers: '', availabilityScope: 'global', availabilityDescription: '' });
+                  setFormData({ 
+                    name: '', 
+                    description: '', 
+                    price: '', 
+                    currency: 'USD', 
+                    category: 'Fresh Items', 
+                    imageUrl: '', 
+                    stock: '', 
+                    tags: '', 
+                    availableCountries: '', 
+                    availableCities: '', 
+                    groupPrice: '', 
+                    targetMembers: '', 
+                    originCountry: 'United Arab Emirates',
+                    freshness: 'Fresh',
+                    availabilityScope: 'global', 
+                    availabilityDescription: ''
+                  });
                 }
               }}
               className="bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center gap-2"
@@ -1465,7 +1576,7 @@ export default function VendorDashboard() {
                       Customer: {order.customerName}
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
-                      {new Date(order.createdAt).toLocaleString()}
+                      {ensureDate(order.createdAt).toLocaleString()}
                     </p>
                   </div>
                   <div className="flex items-center gap-4">
@@ -1488,6 +1599,7 @@ export default function VendorDashboard() {
                         <option value="preparing">Preparing</option>
                         <option value="shipped">Shipped</option>
                         <option value="delivered">Delivered</option>
+                        <option value="payment_rejected">Payment Rejected</option>
                       </select>
                     </div>
                   </div>
@@ -1538,8 +1650,63 @@ export default function VendorDashboard() {
                       <div className="pt-4 border-t border-gray-200">
                         <p className="text-xs text-gray-500 mb-1">Payment Method</p>
                         <p className="text-sm text-gray-900 font-medium capitalize">
-                          {order.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Credit/Debit Card'}
+                          {order.paymentMethod.replace('_', ' ')}
                         </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Payment Status: <span className={`font-bold uppercase ${
+                            order.paymentStatus === 'approved' ? 'text-green-600' : 
+                            order.paymentStatus === 'rejected' ? 'text-red-600' : 
+                            'text-blue-600'
+                          }`}>{order.paymentStatus?.replace('_', ' ')}</span>
+                        </p>
+                      </div>
+                    )}
+
+                    {order.paymentStatus === 'receipt_uploaded' && order.paymentReceipt && (
+                      <div className="mt-4 p-4 bg-blue-50 border border-blue-100 rounded-xl">
+                        <h5 className="text-sm font-bold text-blue-900 mb-2 flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4" /> Payment Receipt Uploaded
+                        </h5>
+                        <div className="flex flex-col sm:flex-row gap-4 items-start">
+                          <img 
+                            src={order.paymentReceipt.imageUrl} 
+                            alt="Receipt" 
+                            className="w-full sm:w-32 h-32 object-cover rounded border border-blue-200 cursor-pointer hover:opacity-90"
+                            onClick={() => window.open(order.paymentReceipt?.imageUrl, '_blank')}
+                          />
+                          <div className="flex-grow space-y-3">
+                            <p className="text-xs text-blue-700">
+                              Please verify the payment receipt. Once verified, you can approve the order.
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              <button 
+                                onClick={() => {
+                                  setSelectedChatUserId(order.customerId);
+                                  setActiveTab('messages');
+                                }}
+                                className="bg-white text-gray-700 border border-gray-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-50 flex items-center gap-2"
+                              >
+                                <MessageSquare className="w-4 h-4" />
+                                Chat with Customer
+                              </button>
+                              <button 
+                                onClick={() => reviewPaymentReceipt(order.id, 'approved')}
+                                className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-green-700"
+                              >
+                                Approve Payment
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  const reason = prompt('Enter rejection reason:');
+                                  if (reason) reviewPaymentReceipt(order.id, 'rejected', reason);
+                                }}
+                                className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-700"
+                              >
+                                Reject Payment
+                              </button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1559,7 +1726,7 @@ export default function VendorDashboard() {
                           <div className="pb-4">
                             <p className="text-sm font-medium text-gray-900 capitalize">{update.status}</p>
                             <p className="text-sm text-gray-600 mt-1">{update.description}</p>
-                            <p className="text-xs text-gray-400 mt-1">{new Date(update.timestamp).toLocaleString()}</p>
+                            <p className="text-xs text-gray-400 mt-1">{ensureDate(update.timestamp).toLocaleString()}</p>
                           </div>
                         </div>
                       ))}
@@ -1571,6 +1738,182 @@ export default function VendorDashboard() {
           )}
         </div>
       )}
+      {/* Payment Settings Tab */}
+      {activeTab === 'payment_settings' && (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Payment Methods</h2>
+                <p className="text-sm text-gray-500">Configure how customers can pay you. Customers will upload receipts for these methods.</p>
+              </div>
+              <button 
+                onClick={() => {
+                  setEditingPaymentMethod(null);
+                  setPaymentMethodForm({
+                    type: 'bank_transfer',
+                    name: '',
+                    details: '',
+                    qrCodeUrl: '',
+                    instructions: '',
+                    isActive: true
+                  });
+                  setIsAddingPaymentMethod(true);
+                }}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" /> Add Method
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {currentUser?.paymentMethods?.map(method => (
+                <div key={method.id} className="border border-gray-100 rounded-xl p-4 flex justify-between items-start bg-gray-50">
+                  <div className="flex-grow">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{method.type.replace('_', ' ')}</span>
+                      {method.isActive ? (
+                        <span className="bg-green-100 text-green-700 text-[10px] px-2 py-0.5 rounded-full font-bold">ACTIVE</span>
+                      ) : (
+                        <span className="bg-gray-200 text-gray-600 text-[10px] px-2 py-0.5 rounded-full font-bold">INACTIVE</span>
+                      )}
+                    </div>
+                    <p className="font-bold text-gray-900">{method.name}</p>
+                    <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap font-mono bg-white p-2 rounded border border-gray-100">{method.details}</p>
+                    {method.instructions && (
+                      <p className="text-xs text-gray-500 mt-2 italic">{method.instructions}</p>
+                    )}
+                    {method.qrCodeUrl && (
+                      <div className="mt-3">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">QR Code</p>
+                        <img src={method.qrCodeUrl} alt="QR Code" className="w-32 h-32 rounded border border-gray-200 bg-white p-1" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2 ml-4">
+                    <button onClick={() => handleEditPaymentMethod(method)} className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors">
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => deleteVendorPaymentMethod(method.id)} className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {(!currentUser?.paymentMethods || currentUser.paymentMethods.length === 0) && (
+                <div className="md:col-span-2 py-12 text-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                  <CreditCard className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500">No payment methods configured yet.</p>
+                  <p className="text-sm text-gray-400">Add methods like Bank Transfer, Alipay, or Easypaisa to start receiving payments.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Method Modal */}
+      {isAddingPaymentMethod && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-gray-900">
+                {editingPaymentMethod ? 'Edit Payment Method' : 'Add Payment Method'}
+              </h3>
+              <button onClick={() => setIsAddingPaymentMethod(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <form onSubmit={handlePaymentMethodSubmit} className="p-6 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Payment Type</label>
+                <select 
+                  value={paymentMethodForm.type}
+                  onChange={(e) => setPaymentMethodForm({...paymentMethodForm, type: e.target.value as any})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                >
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="alipay">Alipay</option>
+                  <option value="wechat">WeChat Pay</option>
+                  <option value="easypaisa">Easypaisa</option>
+                  <option value="payoneer">Payoneer</option>
+                  <option value="paypal">PayPal</option>
+                  <option value="card">Credit/Debit Card</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Method Name (e.g., HBL Bank, My Alipay)</label>
+                <input 
+                  required
+                  type="text"
+                  value={paymentMethodForm.name}
+                  onChange={(e) => setPaymentMethodForm({...paymentMethodForm, name: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                  placeholder="e.g. Standard Chartered Bank"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Payment Details (Account #, IBAN, Email, etc.)</label>
+                <textarea 
+                  required
+                  value={paymentMethodForm.details}
+                  onChange={(e) => setPaymentMethodForm({...paymentMethodForm, details: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                  rows={3}
+                  placeholder="Enter account number, IBAN, or payment ID"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">QR Code URL (Optional)</label>
+                <input 
+                  type="url"
+                  value={paymentMethodForm.qrCodeUrl}
+                  onChange={(e) => setPaymentMethodForm({...paymentMethodForm, qrCodeUrl: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                  placeholder="https://example.com/qr-code.jpg"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Instructions for Customer (Optional)</label>
+                <input 
+                  type="text"
+                  value={paymentMethodForm.instructions}
+                  onChange={(e) => setPaymentMethodForm({...paymentMethodForm, instructions: e.target.value})}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 outline-none"
+                  placeholder="e.g. Please include order ID in reference"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox"
+                  id="isActive"
+                  checked={paymentMethodForm.isActive}
+                  onChange={(e) => setPaymentMethodForm({...paymentMethodForm, isActive: e.target.checked})}
+                  className="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                />
+                <label htmlFor="isActive" className="text-sm font-medium text-gray-700">Active (Visible to customers)</label>
+              </div>
+              <div className="pt-4 flex gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsAddingPaymentMethod(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 shadow-md"
+                >
+                  {editingPaymentMethod ? 'Update Method' : 'Add Method'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Profile Tab */}
       {activeTab === 'profile' && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1610,6 +1953,74 @@ export default function VendorDashboard() {
                 Save Profile
               </button>
             </form>
+
+            {/* Change Password Section */}
+            <div className="mt-12 pt-12 border-t border-gray-100">
+              <h3 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2">
+                <Lock className="w-5 h-5 text-emerald-600" /> Change Password
+              </h3>
+              <p className="text-sm text-gray-500 mb-6">Update your password to keep your account secure.</p>
+
+              {passwordSuccess && (
+                <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm font-bold flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4" /> Password updated successfully!
+                </div>
+              )}
+
+              {passwordError && (
+                <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-bold flex items-center gap-2">
+                  <X className="w-4 h-4" /> {passwordError}
+                </div>
+              )}
+
+              <form onSubmit={handlePasswordChange} className="space-y-6 max-w-xl">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">New Password</label>
+                  <div className="relative">
+                    <input 
+                      required 
+                      type={showNewPassword ? "text" : "password"} 
+                      value={passwordData.newPassword} 
+                      onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })} 
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-green-500 focus:bg-white outline-none transition-all font-medium pr-10" 
+                      placeholder="••••••••"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-green-600 transition-colors"
+                    >
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Confirm New Password</label>
+                  <div className="relative">
+                    <input 
+                      required 
+                      type={showConfirmPassword ? "text" : "password"} 
+                      value={passwordData.confirmPassword} 
+                      onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })} 
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-green-500 focus:bg-white outline-none transition-all font-medium pr-10" 
+                      placeholder="••••••••"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-green-600 transition-colors"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div className="pt-2">
+                  <button type="submit" className="bg-gray-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-black transition-all shadow-lg shadow-gray-200">
+                    Update Password
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}

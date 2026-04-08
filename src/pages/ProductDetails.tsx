@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { Product, VariationCombination } from '../types';
+import { ensureDate } from '../lib/utils';
 import { ArrowLeft, Store, ShoppingCart, Check, AlertCircle, CheckCircle, MapPin, Tag, MessageSquare, Star, Award, Users, Calendar, RefreshCw, Globe2, TrendingUp, ArrowUpRight, Truck } from 'lucide-react';
 import ReviewSection from '../components/ReviewSection';
 
@@ -31,8 +32,8 @@ export default function ProductDetails() {
     if (!activeGroup) return;
 
     const timer = setInterval(() => {
-      const now = new Date().getTime();
-      const expiry = new Date(activeGroup.expiresAt).getTime();
+      const now = ensureDate(new Date()).getTime();
+      const expiry = ensureDate(activeGroup.expiresAt).getTime();
       const diff = expiry - now;
 
       if (diff <= 0) {
@@ -64,9 +65,17 @@ export default function ProductDetails() {
   // Find matching combination
   useEffect(() => {
     if (product?.variationCombinations && Object.keys(selectedOptions).length > 0) {
-      const match = product.variationCombinations.find(vc => 
-        Object.entries(selectedOptions).every(([key, value]) => vc.combination[key] === value)
-      );
+      const match = product.variationCombinations.find(vc => {
+        // Ensure all selected options match the combination
+        const selectedEntries = Object.entries(selectedOptions);
+        if (selectedEntries.length === 0) return false;
+        
+        return selectedEntries.every(([key, value]) => {
+          const vcValue = vc.combination[key];
+          return vcValue && vcValue.toString().trim() === value.toString().trim();
+        });
+      });
+      
       setCurrentCombination(match || null);
       setActiveImageIndex(0); // Reset image index when variation changes
     } else {

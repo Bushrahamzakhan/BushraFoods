@@ -3,8 +3,9 @@ import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { ShoppingCart, Store, User as UserIcon, LogOut, Menu, X, Package, Search, MapPin, ChevronDown, Globe, Bell, MessageSquare, BarChart2, TrendingUp } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { SUPPORTED_CURRENCIES } from '../types';
+import { ensureDate } from '../lib/utils';
 
-export default function Layout() {
+export default function Layout({ children }: { children?: React.ReactNode }) {
   const { currentUser, logout, cart, isAuthReady, preferredCurrency, setPreferredCurrency, notifications, markNotificationAsRead, conversations } = useAppContext();
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -103,7 +104,7 @@ export default function Layout() {
                     {currentUser.role === 'vendor' && (
                       <Link to="/vendor" className="block px-4 py-2 text-sm hover:bg-emerald-50 hover:text-emerald-700">Vendor Dashboard</Link>
                     )}
-                    {currentUser.role === 'admin' && (
+                    {(currentUser.role === 'admin' || currentUser.email === 'bushraanwar854@gmail.com') && (
                       <Link to="/admin" className="block px-4 py-2 text-sm hover:bg-emerald-50 hover:text-emerald-700">Admin Dashboard</Link>
                     )}
                     <button onClick={handleLogout} className="w-full text-left block px-4 py-2 text-sm hover:bg-emerald-50 hover:text-emerald-700">
@@ -270,7 +271,7 @@ export default function Layout() {
                                 {notification.title}
                               </h4>
                               <span className="text-[9px] text-gray-400 whitespace-nowrap ml-2">
-                                {new Date(notification.createdAt).toLocaleDateString()}
+                                {ensureDate(notification.createdAt).toLocaleDateString()}
                               </span>
                             </div>
                             <p className="text-[10px] text-gray-600 line-clamp-1">{notification.message}</p>
@@ -359,7 +360,7 @@ export default function Layout() {
       </header>
 
       <main className="flex-grow w-full mx-auto pb-8">
-        <Outlet />
+        {children || <Outlet />}
       </main>
 
       {/* Footer */}
@@ -397,7 +398,7 @@ export default function Layout() {
             <ul className="space-y-2 text-sm text-gray-300">
               <li><Link to={currentUser ? (currentUser.role === 'vendor' ? "/vendor" : "/customer") : "/login"} className="hover:underline">Your Account</Link></li>
               <li><Link to={currentUser ? (currentUser.role === 'vendor' ? "/vendor" : "/customer") : "/login"} className="hover:underline">Your Orders</Link></li>
-              {currentUser?.role === 'admin' && (
+              {(currentUser?.role === 'admin' || currentUser?.email === 'bushraanwar854@gmail.com') && (
                 <li><Link to="/admin" className="hover:underline text-emerald-400 font-bold">Admin Panel</Link></li>
               )}
               <li><Link to="/help" className="hover:underline">Shipping Rates & Policies</Link></li>
@@ -418,7 +419,7 @@ export default function Layout() {
             <Link to="/privacy" className="hover:underline">Consumer Health Data Privacy Disclosure</Link>
           </div>
           <p className="mt-4 text-sm text-gray-400">
-            &copy; {new Date().getFullYear()}, HalalMarketOnline.com, Inc. or its affiliates
+            &copy; {ensureDate(new Date()).getFullYear()}, HalalMarketOnline.com, Inc. or its affiliates
           </p>
         </div>
       </footer>

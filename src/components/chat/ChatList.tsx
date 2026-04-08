@@ -2,6 +2,7 @@ import React from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { User as UserIcon, MessageSquare } from 'lucide-react';
 import { ChatConversation } from '../../types';
+import { ensureDate } from '../../lib/utils';
 
 interface ChatListProps {
   onSelect: (userId: string) => void;
@@ -29,18 +30,18 @@ export default function ChatList({ onSelect, activeUserId }: ChatListProps) {
       <div className="divide-y divide-gray-50">
         {conversations.map((conv) => (
           <button
-            key={conv.otherUser.id}
-            onClick={() => onSelect(conv.otherUser.id)}
+            key={conv.otherUserId}
+            onClick={() => onSelect(conv.otherUserId)}
             className={`w-full flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors text-left ${
-              activeUserId === conv.otherUser.id ? 'bg-green-50/50 border-l-4 border-green-600' : ''
+              activeUserId === conv.otherUserId ? 'bg-green-50/50 border-l-4 border-green-600' : ''
             }`}
           >
             <div className="relative">
               <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center overflow-hidden border border-green-50">
-                {conv.otherUser.profileImage ? (
+                {conv.otherUserProfileImage ? (
                   <img 
-                    src={conv.otherUser.profileImage} 
-                    alt={conv.otherUser.name} 
+                    src={conv.otherUserProfileImage} 
+                    alt={conv.otherUserName} 
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />
@@ -57,16 +58,18 @@ export default function ChatList({ onSelect, activeUserId }: ChatListProps) {
             <div className="flex-grow min-w-0">
               <div className="flex justify-between items-start mb-1">
                 <h4 className="font-bold text-gray-900 truncate text-sm">
-                  {conv.otherUser.storeName || conv.otherUser.name}
+                  {conv.otherUserName}
                 </h4>
                 <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
-                  {new Date(conv.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {conv.lastMessage && ensureDate(conv.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
-              <p className={`text-xs truncate ${conv.unreadCount > 0 ? 'text-gray-900 font-bold' : 'text-gray-500'}`}>
-                {conv.lastMessage.senderId === conv.otherUser.id ? '' : 'You: '}
-                {conv.lastMessage.content}
-              </p>
+              {conv.lastMessage && (
+                <p className={`text-xs truncate ${conv.unreadCount > 0 ? 'text-gray-900 font-bold' : 'text-gray-500'}`}>
+                  {conv.lastMessage.senderId === conv.otherUserId ? '' : 'You: '}
+                  {conv.lastMessage.content}
+                </p>
+              )}
             </div>
           </button>
         ))}

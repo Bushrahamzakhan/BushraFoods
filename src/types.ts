@@ -1,24 +1,26 @@
-export type Role = 'customer' | 'vendor' | 'admin';
+import { Timestamp } from 'firebase/firestore';
 
-export interface Currency {
-  code: string;
-  symbol: string;
-  name: string;
-}
+export type UserRole = 'buyer' | 'seller' | 'admin' | 'vendor' | 'customer' | 'investor' | 'moderator' | 'support';
+export type Role = UserRole;
+export type OrderStatus = 'pending' | 'processing' | 'preparing' | 'shipped' | 'delivered' | 'cancelled' | 'confirmed' | 'refunded' | 'payment_rejected';
+export type PaymentStatus = 'pending' | 'receipt_uploaded' | 'under_review' | 'approved' | 'rejected';
+export type PaymentMethodType = 'card' | 'alipay' | 'wechat' | 'bank_transfer' | 'easypaisa' | 'payoneer' | 'paypal' | 'other';
+export type VariationType = { name: string; options: string[] };
+export type VariationCombination = { 
+  combination: Record<string, string>;
+  price: number;
+  stock: number;
+  id?: string;
+  images?: string[];
+  weight?: string;
+  attributes?: Record<string, any>;
+};
 
-export const SUPPORTED_CURRENCIES: Currency[] = [
-  { code: 'original', symbol: '', name: 'Original Currency' },
+export const SUPPORTED_CURRENCIES = [
   { code: 'USD', symbol: '$', name: 'US Dollar' },
   { code: 'EUR', symbol: '€', name: 'Euro' },
-  { code: 'PKR', symbol: 'Rs', name: 'Pakistani Rupee' },
-  { code: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
   { code: 'GBP', symbol: '£', name: 'British Pound' },
-  { code: 'JPY', symbol: '¥', name: 'Japanese Yen' },
-  { code: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
-  { code: 'CAD', symbol: 'C$', name: 'Canadian Dollar' },
-  { code: 'CHF', symbol: 'Fr', name: 'Swiss Franc' },
-  { code: 'HKD', symbol: 'HK$', name: 'Hong Kong Dollar' },
-  { code: 'SGD', symbol: 'S$', name: 'Singapore Dollar' },
+  { code: 'PKR', symbol: 'Rs', name: 'Pakistani Rupee' },
   { code: 'AED', symbol: 'د.إ', name: 'UAE Dirham' },
   { code: 'SAR', symbol: '﷼', name: 'Saudi Riyal' },
   { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
@@ -26,10 +28,134 @@ export const SUPPORTED_CURRENCIES: Currency[] = [
   { code: 'TRY', symbol: '₺', name: 'Turkish Lira' },
   { code: 'MYR', symbol: 'RM', name: 'Malaysian Ringgit' },
   { code: 'IDR', symbol: 'Rp', name: 'Indonesian Rupiah' },
-  { code: 'ZAR', symbol: 'R', name: 'South African Rand' },
-  { code: 'NZD', symbol: 'NZ$', name: 'New Zealand Dollar' },
-  { code: 'BRL', symbol: 'R$', name: 'Brazilian Real' },
 ];
+
+export interface User {
+  id: string;
+  uid?: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  status: string;
+  storeName?: string;
+  storeDescription?: string;
+  profileImage?: string;
+  coverImage?: string;
+  lastShippingDetails?: ShippingDetails;
+  wishlist?: string[];
+  isTopRated?: boolean;
+  rating?: number;
+  reviewCount?: number;
+  paymentMethods?: VendorPaymentMethod[];
+  createdAt: string | Timestamp;
+}
+
+export interface VendorPaymentMethod {
+  id: string;
+  type: PaymentMethodType;
+  name: string;
+  details: string;
+  qrCodeUrl?: string;
+  instructions?: string;
+  isActive: boolean;
+}
+
+export interface UserProfile extends User {}
+
+export interface Product {
+  id: string;
+  vendorId: string;
+  vendorName: string;
+  vendorIsTopRated?: boolean;
+  name: string;
+  description: string;
+  price: number;
+  currency: string;
+  category: string;
+  imageUrl: string;
+  stock: number;
+  tags: string[];
+  isHalalCertified: boolean;
+  availableCountries: string[];
+  availableCities: string[];
+  variationTypes: VariationType[];
+  variationCombinations: VariationCombination[];
+  originCountry: string;
+  freshness: string;
+  groupPrice?: number;
+  targetMembers?: number;
+  availabilityScope: 'global' | 'country' | 'local';
+  availabilityDescription?: string;
+  rating?: number;
+  reviewCount?: number;
+  createdAt: string | Timestamp;
+}
+
+export interface CartItem {
+  productId: string;
+  product: Product;
+  quantity: number;
+  selectedVariations?: Record<string, string>;
+}
+
+export interface ShippingDetails {
+  fullName: string;
+  email: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  zipCode: string;
+  phone: string;
+}
+
+export type PaymentMethod = PaymentMethodType;
+
+export interface Order {
+  id: string;
+  customerId: string;
+  customerName: string;
+  vendorId: string;
+  vendorName: string;
+  status: OrderStatus;
+  paymentStatus: PaymentStatus;
+  totalAmount: number;
+  currency: string;
+  items: OrderItem[];
+  shippingDetails: ShippingDetails;
+  paymentMethod: PaymentMethod;
+  paymentReceipt?: PaymentReceipt;
+  vendorPaymentDetails?: VendorPaymentMethod;
+  history: OrderHistoryItem[];
+  createdAt: string | Timestamp;
+  userId?: string; // For backward compatibility or specific queries
+}
+
+export interface PaymentReceipt {
+  imageUrl: string;
+  uploadedAt: string | Timestamp;
+  status: PaymentStatus;
+  rejectionReason?: string;
+  reviewedAt?: string | Timestamp;
+  reviewedBy?: string;
+}
+
+export interface OrderItem {
+  productId: string;
+  productName: string;
+  price: number;
+  currency: string;
+  quantity: number;
+  selectedVariations: Record<string, string>;
+  imageUrl: string;
+}
+
+export interface OrderHistoryItem {
+  id: string;
+  status: OrderStatus;
+  description: string;
+  timestamp: string;
+}
 
 export interface Notification {
   id: string;
@@ -42,24 +168,35 @@ export interface Notification {
   createdAt: string;
 }
 
-export type UserStatus = 'pending' | 'active' | 'suspended';
-
-export interface User {
+export interface ChatMessage {
   id: string;
-  name: string;
-  email: string;
-  role: Role;
-  status: UserStatus;
-  storeName?: string;
-  storeDescription?: string;
-  profileImage?: string;
-  coverImage?: string;
-  lastShippingDetails?: ShippingDetails;
-  wishlist?: string[]; // Array of product IDs
-  rating?: number;
-  reviewCount?: number;
-  isTopRated?: boolean;
+  senderId: string;
+  receiverId: string;
+  content: string;
+  isRead: boolean;
   createdAt: string;
+}
+
+export interface ChatConversation {
+  otherUserId: string;
+  otherUserName: string;
+  otherUserProfileImage?: string;
+  lastMessage?: ChatMessage;
+  unreadCount: number;
+  otherUser?: string; // Alias for otherUserId used in some components
+}
+
+export interface Review {
+  id: string;
+  userId: string;
+  userName: string;
+  userProfileImage?: string;
+  productId?: string;
+  vendorId?: string;
+  rating: number;
+  comment: string;
+  isVerifiedPurchase: boolean;
+  createdAt: string | Timestamp;
 }
 
 export interface Subscription {
@@ -67,6 +204,7 @@ export interface Subscription {
   customerId: string;
   productId: string;
   productName: string;
+  productImageUrl?: string;
   vendorId: string;
   vendorName: string;
   frequency: 'daily' | 'weekly' | 'monthly';
@@ -82,6 +220,7 @@ export interface GroupPurchase {
   id: string;
   productId: string;
   productName: string;
+  productImageUrl?: string;
   vendorId: string;
   vendorName: string;
   targetMembers: number;
@@ -96,33 +235,10 @@ export interface GroupPurchase {
 
 export interface GroupMember {
   id: string;
-  groupPurchaseId: string;
   customerId: string;
   customerName: string;
+  customerProfileImage?: string;
   joinedAt: string;
-}
-
-export interface VariationType {
-  name: string; // e.g., "Color", "Size"
-  options: string[]; // e.g., ["Red", "Blue"]
-}
-
-export interface VariationCombination {
-  id: string;
-  combination: Record<string, string>; // e.g., {"Color": "Red", "Size": "XL"}
-  price: number;
-  stock: number;
-  images: string[];
-  weight?: string;
-  attributes?: Record<string, string>;
-}
-
-export interface InvestmentTier {
-  id: string;
-  name: string;
-  amount: number;
-  returnPct: number;
-  estimatedEarnings: number;
 }
 
 export interface InvestmentOpportunity {
@@ -134,10 +250,18 @@ export interface InvestmentOpportunity {
   currentFunding: number;
   totalUnits: number;
   profitSharingPct: number;
-  status: 'pending' | 'active' | 'completed';
-  tiers: InvestmentTier[];
   riskLevel: 'low' | 'medium' | 'high';
+  status: 'active' | 'completed' | 'cancelled';
   createdAt: string;
+  tiers: InvestmentTier[];
+}
+
+export interface InvestmentTier {
+  id: string;
+  name: string;
+  amount: number;
+  returnPct: number;
+  estimatedEarnings: number;
 }
 
 export interface Investment {
@@ -151,8 +275,16 @@ export interface Investment {
   amount: number;
   expectedReturnPct: number;
   earnedSoFar: number;
-  status: 'active' | 'completed';
+  status: 'active' | 'completed' | 'cancelled';
   createdAt: string;
+}
+
+export interface InvestorWallet {
+  userId: string;
+  balance: number;
+  totalEarned: number;
+  updatedAt: string;
+  transactions?: WalletTransaction[];
 }
 
 export interface WalletTransaction {
@@ -164,135 +296,13 @@ export interface WalletTransaction {
   createdAt: string;
 }
 
-export interface InvestorWallet {
-  userId: string;
-  balance: number;
-  totalEarned: number;
-  transactions: WalletTransaction[];
-}
-
-export interface SalesStat {
-  month: string;
-  unitsSold: number;
-  revenue: number;
-}
-
-export type AvailabilityScope = 'local' | 'country' | 'global';
-
-export interface Product {
+export interface AuditLog {
   id: string;
-  vendorId: string;
-  vendorName: string;
-  name: string;
-  description: string;
-  price: number;
-  currency: string;
-  category: string;
-  imageUrl: string;
-  stock: number;
-  tags: string[];
-  isHalalCertified: boolean;
-  availableCountries?: string[]; // For Fresh Items
-  availableCities?: string[]; // For Fresh Items
-  variationTypes?: VariationType[];
-  variationCombinations?: VariationCombination[];
-  originCountry?: string;
-  freshness?: 'fresh' | 'frozen' | 'organic';
-  groupPrice?: number;
-  targetMembers?: number;
-  rating?: number;
-  reviewCount?: number;
-  investmentOpportunity?: InvestmentOpportunity;
-  salesStats?: SalesStat[];
-  availabilityScope?: AvailabilityScope;
-  availabilityDescription?: string;
+  action: 'GRANT_ADMIN' | 'REVOKE_ADMIN' | 'SUSPEND_USER' | 'ACTIVATE_USER' | 'UPDATE_USER_ROLE' | 'GRANT_MODERATOR' | 'REVOKE_MODERATOR' | 'SYSTEM_CONFIG_CHANGE';
+  performedBy: string;
+  performedByName: string;
+  targetUserId: string;
+  targetUserName: string;
+  details?: string;
+  createdAt: string | Timestamp;
 }
-
-export interface CartItem {
-  product: Product;
-  quantity: number;
-  selectedVariations?: Record<string, string>;
-}
-
-export type OrderStatus = 'pending' | 'confirmed' | 'preparing' | 'shipped' | 'delivered';
-export type PaymentMethod = 'card' | 'cod';
-
-export interface OrderStatusUpdate {
-  id: string;
-  orderId: string;
-  status: OrderStatus;
-  description: string;
-  timestamp: string;
-}
-
-export interface OrderItem {
-  productId: string;
-  productName: string;
-  quantity: number;
-  price: number;
-  currency: string;
-  vendorId: string;
-  selectedVariations?: Record<string, string>;
-  imageUrl?: string;
-}
-
-export interface ShippingDetails {
-  fullName: string;
-  email: string;
-  phone: string;
-  address: string;
-  city: string;
-  state: string;
-  country: string;
-  zipCode: string;
-}
-
-export interface Order {
-  id: string;
-  customerId: string;
-  customerName: string;
-  vendorId: string;
-  items: OrderItem[];
-  totalAmount: number;
-  currency: string;
-  status: OrderStatus;
-  createdAt: string;
-  shippingDetails: ShippingDetails;
-  paymentMethod: PaymentMethod;
-  history?: OrderStatusUpdate[];
-}
-
-export interface ChatMessage {
-  id: string;
-  senderId: string;
-  receiverId: string;
-  content: string;
-  isRead: boolean;
-  createdAt: string;
-}
-
-export interface ChatConversation {
-  otherUser: {
-    id: string;
-    name: string;
-    profileImage?: string;
-    role: Role;
-    storeName?: string;
-  };
-  lastMessage: ChatMessage;
-  unreadCount: number;
-}
-
-export interface Review {
-  id: string;
-  userId: string;
-  userName: string;
-  userProfileImage?: string;
-  productId?: string; // If it's a product review
-  vendorId?: string; // If it's a vendor review
-  rating: number;
-  comment: string;
-  isVerifiedPurchase: boolean;
-  createdAt: string;
-}
-

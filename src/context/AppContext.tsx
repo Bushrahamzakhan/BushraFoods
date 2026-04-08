@@ -1,6 +1,39 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
-import { User, Product, CartItem, Order, OrderStatus, ShippingDetails, PaymentMethod, SUPPORTED_CURRENCIES, Notification, ChatMessage, ChatConversation, Review, Subscription, GroupPurchase, InvestmentOpportunity, Investment, InvestorWallet } from '../types';
-import { io, Socket } from 'socket.io-client';
+import { User, Product, CartItem, Order, OrderStatus, ShippingDetails, PaymentMethod, SUPPORTED_CURRENCIES, Notification, ChatMessage, ChatConversation, Review, Subscription, GroupPurchase, InvestmentOpportunity, Investment, InvestorWallet, Role, AuditLog, PaymentMethodType, VendorPaymentMethod, PaymentReceipt, PaymentStatus } from '../types';
+import { ensureDate } from '../lib/utils';
+import { auth, db } from '../firebase';
+import { 
+  onAuthStateChanged, 
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  GoogleAuthProvider,
+  signInWithPopup,
+  sendPasswordResetEmail,
+  updatePassword as firebaseUpdatePassword
+} from 'firebase/auth';
+import { 
+  collection, 
+  doc, 
+  onSnapshot, 
+  query, 
+  where, 
+  orderBy, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  getDoc, 
+  getDocs, 
+  setDoc,
+  Timestamp,
+  serverTimestamp,
+  increment,
+  limit,
+  arrayUnion,
+  arrayRemove,
+  writeBatch,
+  getDocFromServer
+} from 'firebase/firestore';
 
 const EXCHANGE_RATES: Record<string, number> = {
   USD: 1,
@@ -26,30 +59,100 @@ const EXCHANGE_RATES: Record<string, number> = {
   BRL: 5.05,
 };
 
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+const cleanData = (obj: any) => {
+  const newObj = { ...obj };
+  Object.keys(newObj).forEach(key => {
+    if (newObj[key] === undefined) {
+      delete newObj[key];
+    }
+  });
+  return newObj;
+};
+
 interface AppContextType {
   currentUser: User | null;
   preferredCurrency: string;
   setPreferredCurrency: (code: string) => void;
   formatPrice: (amount: number, fromCurrency?: string) => string;
   convertPrice: (amount: number, fromCurrency: string, toCurrency: string) => number;
-  login: (user: User, token: string) => void;
+  getCartTotal: () => number;
+  login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  signup: (email: string, password: string, profile: Partial<User>) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
   logout: () => void;
   products: Product[];
-  addProduct: (product: Omit<Product, 'id' | 'vendorId' | 'vendorName'>) => Promise<void>;
+  addProduct: (product: Omit<Product, 'id' | 'vendorId' | 'vendorName' | 'createdAt'>) => Promise<void>;
   updateProduct: (product: Product) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
-  fetchProducts: (filters?: any) => Promise<void>;
   cart: CartItem[];
   addToCart: (product: Product, quantity: number, selectedVariations?: Record<string, string>) => void;
   removeFromCart: (productId: string, selectedVariations?: Record<string, string>) => void;
   clearCart: () => void;
   orders: Order[];
-  placeOrder: (shippingDetails: ShippingDetails, paymentMethod: PaymentMethod) => Promise<void>;
+  placeOrder: (shippingDetails: ShippingDetails, paymentMethods: Record<string, PaymentMethodType>) => Promise<void>;
   updateOrderStatus: (orderId: string, status: OrderStatus, description?: string) => Promise<void>;
   vendors: User[];
   updateVendorProfile: (vendor: User) => Promise<void>;
   updateUserProfile: (user: Partial<User>) => Promise<void>;
   toggleWishlist: (productId: string) => Promise<void>;
+  addVendorPaymentMethod: (method: Omit<VendorPaymentMethod, 'id'>) => Promise<void>;
+  updateVendorPaymentMethod: (method: VendorPaymentMethod) => Promise<void>;
+  deleteVendorPaymentMethod: (id: string) => Promise<void>;
+  uploadPaymentReceipt: (orderId: string, imageUrl: string) => Promise<void>;
+  reviewPaymentReceipt: (orderId: string, status: 'approved' | 'rejected', reason?: string) => Promise<void>;
   adminStats: any;
   adminVendors: User[];
   adminProducts: Product[];
@@ -69,6 +172,10 @@ interface AppContextType {
   deleteProductAdmin: (id: string) => Promise<void>;
   deleteReviewAdmin: (id: string) => Promise<void>;
   updateOrderStatusAdmin: (orderId: string, status: OrderStatus, description?: string) => Promise<void>;
+  updateUserRole: (targetUserId: string, newRole: Role, targetUserName: string) => Promise<void>;
+  updateUserStatus: (targetUserId: string, newStatus: string, targetUserName: string) => Promise<void>;
+  auditLogs: AuditLog[];
+  fetchAuditLogs: () => Promise<void>;
   recalculateTopRated: () => Promise<void>;
   customers: User[];
   isAuthReady: boolean;
@@ -79,7 +186,7 @@ interface AppContextType {
   activeChatUserId: string | null;
   setActiveChatUserId: (id: string | null) => void;
   fetchConversations: () => Promise<void>;
-  fetchMessages: (otherUserId: string) => Promise<void>;
+  fetchMessages: (otherUserId: string) => (() => void);
   sendMessage: (receiverId: string, content: string) => Promise<void>;
   fetchProductReviews: (productId: string) => Promise<Review[]>;
   fetchVendorReviews: (vendorId: string) => Promise<Review[]>;
@@ -88,7 +195,7 @@ interface AppContextType {
   subscriptions: Subscription[];
   fetchGroupPurchases: () => Promise<void>;
   fetchSubscriptions: () => Promise<void>;
-  createGroupPurchase: (productId: string, targetMembers: number) => Promise<void>;
+  createGroupPurchase: (productId: string, targetMembers: number, durationHours?: number) => Promise<void>;
   joinGroupPurchase: (groupId: string) => Promise<void>;
   createSubscription: (productId: string, frequency: 'daily' | 'weekly' | 'monthly', quantity: number) => Promise<void>;
   updateSubscriptionStatus: (id: string, status: 'active' | 'paused' | 'cancelled') => Promise<void>;
@@ -115,7 +222,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [preferredCurrency, setPreferredCurrency] = useState<string>(() => {
     return localStorage.getItem('preferredCurrency') || 'original';
   });
-  const [token, setToken] = useState<string | null>(localStorage.getItem('auth_token'));
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [groupPurchases, setGroupPurchases] = useState<GroupPurchase[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
@@ -129,42 +235,122 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return saved ? JSON.parse(saved) : { country: '', city: '' };
   });
 
+  // Firebase Auth Listener
+  useEffect(() => {
+    const testConnection = async () => {
+      try {
+        const { getDocFromServer } = await import('firebase/firestore');
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('the client is offline')) {
+          console.error("Please check your Firebase configuration. ");
+        }
+      }
+    };
+    testConnection();
+
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      try {
+        if (firebaseUser) {
+          // Get user profile from Firestore
+          let userDoc;
+          try {
+            userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          } catch (e) {
+            handleFirestoreError(e, OperationType.GET, `users/${firebaseUser.uid}`);
+          }
+
+          if (userDoc?.exists()) {
+            let userData = userDoc.data() as User;
+            
+            // Force admin role for super admin email
+            if (firebaseUser.email === 'bushraanwar854@gmail.com' && userData.role !== 'admin') {
+              userData.role = 'admin';
+              try {
+                await updateDoc(doc(db, 'users', firebaseUser.uid), { role: 'admin' });
+              } catch (e) {
+                console.error("Failed to auto-update super admin role:", e);
+              }
+            }
+            
+            setCurrentUser({ id: firebaseUser.uid, ...userData });
+          } else {
+            // Create profile if it doesn't exist
+            const newUser: User = {
+              id: firebaseUser.uid,
+              name: firebaseUser.displayName || 'User',
+              email: firebaseUser.email || '',
+              role: firebaseUser.email === 'bushraanwar854@gmail.com' ? 'admin' : 'customer',
+              status: 'active',
+              createdAt: serverTimestamp() as any
+            };
+            try {
+              await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+              setCurrentUser(newUser);
+            } catch (e) {
+              handleFirestoreError(e, OperationType.WRITE, `users/${firebaseUser.uid}`);
+            }
+          }
+        } else {
+          setCurrentUser(null);
+        }
+      } catch (e) {
+        console.error("Auth listener error:", e);
+      } finally {
+        setIsAuthReady(true);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('userLocation', JSON.stringify(userLocation));
   }, [userLocation]);
 
   useEffect(() => {
-    const detectLocation = async () => {
-      if (userLocation.country) return;
+    const detectUserContext = async () => {
+      // Skip if already detected or preferred
+      const hasLocation = !!userLocation.country;
+      const hasPreferredCurrency = !!localStorage.getItem('preferredCurrency');
+      
+      if (hasLocation && hasPreferredCurrency) return;
+
       try {
-        const res = await fetch('https://ipapi.co/json/');
+        // Use a controller to timeout the request
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+        const res = await fetch('https://ipapi.co/json/', { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
+        if (!res.ok) throw new Error('Network response was not ok');
+        
         const data = await res.json();
-        if (data.country_name) {
+        
+        if (!hasLocation && data.country_name) {
           setUserLocation({ country: data.country_name, city: data.city || '' });
         }
-      } catch (e) {
-        console.error('Failed to detect location:', e);
-      }
-    };
-    detectLocation();
-  }, []);
-
-  useEffect(() => {
-    const detectCurrency = async () => {
-      if (localStorage.getItem('preferredCurrency')) return;
-      try {
-        const res = await fetch('https://ipapi.co/json/');
-        const data = await res.json();
-        if (data.currency) {
+        
+        if (!hasPreferredCurrency && data.currency) {
           setPreferredCurrency(data.currency);
         }
       } catch (e) {
-        // Fallback to browser locale
-        const browserCurrency = new Intl.NumberFormat().resolvedOptions().currency;
-        if (browserCurrency) setPreferredCurrency(browserCurrency);
+        // Silent fail for location/currency detection as it's a non-critical enhancement
+        // Fallback for currency if not set
+        if (!hasPreferredCurrency) {
+          try {
+            const browserCurrency = new Intl.NumberFormat().resolvedOptions().currency;
+            if (browserCurrency) setPreferredCurrency(browserCurrency);
+          } catch (err) {
+            // Final fallback to USD
+            setPreferredCurrency('USD');
+          }
+        }
       }
     };
-    detectCurrency();
+    
+    detectUserContext();
   }, []);
 
   useEffect(() => {
@@ -205,10 +391,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [adminCustomers, setAdminCustomers] = useState<User[]>([]);
   const [adminInvestments, setAdminInvestments] = useState<{ opportunities: InvestmentOpportunity[], investments: Investment[] }>({ opportunities: [], investments: [] });
   const [adminReviews, setAdminReviews] = useState<Review[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [activeMessages, setActiveMessages] = useState<ChatMessage[]>([]);
   const [activeChatUserId, setActiveChatUserId] = useState<string | null>(null);
-  const [socket, setSocket] = useState<Socket | null>(null);
 
   const activeChatUserIdRef = useRef<string | null>(null);
   const currentUserRef = useRef<User | null>(null);
@@ -230,512 +416,751 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     throw new Error(`Server returned non-JSON response: ${text.slice(0, 100)}...`);
   };
 
-  const fetchProducts = useCallback(async (filters: any = {}) => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== '') {
-          params.append(key, String(value));
-        }
-      });
-      
-      // Add location parameters if not already present in filters
-      if (!params.has('userCountry') && userLocation.country) {
-        params.append('userCountry', userLocation.country);
-      }
-      if (!params.has('userCity') && userLocation.city) {
-        params.append('userCity', userLocation.city);
-      }
-
-      const res = await fetch(`/api/products?${params.toString()}`);
-      if (res.ok) setProducts(await handleResponse(res));
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  }, [userLocation]);
-
   const fetchVendors = async () => {
     try {
-      const res = await fetch('/api/users/vendors');
-      if (res.ok) {
-        const data = await handleResponse(res);
-        setVendors(data.vendors || []);
-      }
+      const q = query(collection(db, 'users'), where('role', '==', 'vendor'));
+      const snapshot = await getDocs(q);
+      setVendors(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'users');
     }
   };
 
   const fetchOrders = async () => {
-    if (!token) return;
+    if (!currentUser) return;
     try {
-      const res = await fetch('/api/orders', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) setOrders(await handleResponse(res));
+      const q = query(
+        collection(db, 'orders'), 
+        where(currentUser.role === 'vendor' ? 'vendorId' : 'customerId', '==', currentUser.id),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'orders');
     }
   };
 
   const fetchNotifications = async () => {
-    if (!token) return;
+    if (!currentUser) return;
     try {
-      const res = await fetch('/api/notifications', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) setNotifications(await handleResponse(res));
+      const q = query(collection(db, 'notifications'), where('userId', '==', currentUser.id), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      setNotifications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Notification)));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'notifications');
+    }
+  };
+
+  const addVendorPaymentMethod = async (method: Omit<VendorPaymentMethod, 'id'>) => {
+    if (!currentUser || (currentUser.role !== 'vendor' && currentUser.role !== 'seller')) return;
+    const newMethod = { ...method, id: Math.random().toString(36).substr(2, 9) };
+    const updatedMethods = [...(currentUser.paymentMethods || []), newMethod];
+    await updateUserProfile({ paymentMethods: updatedMethods });
+  };
+
+  const updateVendorPaymentMethod = async (method: VendorPaymentMethod) => {
+    if (!currentUser || (currentUser.role !== 'vendor' && currentUser.role !== 'seller')) return;
+    const updatedMethods = (currentUser.paymentMethods || []).map(m => m.id === method.id ? method : m);
+    await updateUserProfile({ paymentMethods: updatedMethods });
+  };
+
+  const deleteVendorPaymentMethod = async (id: string) => {
+    if (!currentUser || (currentUser.role !== 'vendor' && currentUser.role !== 'seller')) return;
+    const updatedMethods = (currentUser.paymentMethods || []).filter(m => m.id !== id);
+    await updateUserProfile({ paymentMethods: updatedMethods });
+  };
+
+  const uploadPaymentReceipt = async (orderId: string, imageUrl: string) => {
+    if (!currentUser) return;
+    const orderRef = doc(db, 'orders', orderId);
+    const receipt: PaymentReceipt = {
+      imageUrl,
+      uploadedAt: ensureDate(new Date()).toISOString(),
+      status: 'receipt_uploaded'
+    };
+    
+    try {
+      await updateDoc(orderRef, {
+        paymentReceipt: receipt,
+        paymentStatus: 'receipt_uploaded',
+        status: 'processing',
+        history: arrayUnion({
+          id: Math.random().toString(36).substr(2, 9),
+          status: 'processing',
+          description: 'Payment receipt uploaded. Awaiting vendor review.',
+          timestamp: ensureDate(new Date()).toISOString()
+        })
+      });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `orders/${orderId}`);
+    }
+  };
+
+  const reviewPaymentReceipt = async (orderId: string, status: 'approved' | 'rejected', reason?: string) => {
+    if (!currentUser) return;
+    const orderRef = doc(db, 'orders', orderId);
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    const updatedReceipt = {
+      ...order.paymentReceipt,
+      status,
+      rejectionReason: reason,
+      reviewedAt: ensureDate(new Date()).toISOString(),
+      reviewedBy: currentUser.id
+    };
+
+    const orderStatus = status === 'approved' ? 'confirmed' : 'payment_rejected';
+
+    try {
+      await updateDoc(orderRef, {
+        paymentReceipt: updatedReceipt,
+        paymentStatus: status,
+        status: orderStatus,
+        history: arrayUnion({
+          id: Math.random().toString(36).substr(2, 9),
+          status: orderStatus,
+          description: status === 'approved' ? 'Payment approved' : `Payment rejected: ${reason}`,
+          timestamp: ensureDate(new Date()).toISOString()
+        })
+      });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `orders/${orderId}`);
     }
   };
 
   const fetchAdminStats = async () => {
-    if (!token || currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') return;
     try {
-      const res = await fetch('/api/admin/stats', {
-        headers: { Authorization: `Bearer ${token}` }
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const productsSnap = await getDocs(collection(db, 'products'));
+      const ordersSnap = await getDocs(collection(db, 'orders'));
+      const reviewsSnap = await getDocs(collection(db, 'reviews'));
+
+      const orders = ordersSnap.docs.map(d => d.data());
+      const totalRevenue = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+
+      setAdminStats({
+        totalUsers: usersSnap.size,
+        totalVendors: usersSnap.docs.filter(d => d.data().role === 'vendor').length,
+        totalProducts: productsSnap.size,
+        totalOrders: ordersSnap.size,
+        totalRevenue,
+        totalReviews: reviewsSnap.size
       });
-      if (res.ok) setAdminStats(await handleResponse(res));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'adminStats');
     }
   };
 
   const fetchAdminVendors = async () => {
-    if (!token || currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') return;
     try {
-      const res = await fetch('/api/admin/vendors', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) setAdminVendors(await handleResponse(res));
+      const q = query(collection(db, 'users'), where('role', '==', 'vendor'));
+      const snapshot = await getDocs(q);
+      setAdminVendors(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'adminVendors');
     }
   };
 
   const fetchAdminProducts = async () => {
-    if (!token || currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') return;
     try {
-      const res = await fetch('/api/admin/products', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) setAdminProducts(await handleResponse(res));
+      const snapshot = await getDocs(collection(db, 'products'));
+      setAdminProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'adminProducts');
     }
   };
 
   const fetchAdminOrders = async () => {
-    if (!token || currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') return;
     try {
-      const res = await fetch('/api/admin/orders', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) setAdminOrders(await handleResponse(res));
+      const snapshot = await getDocs(collection(db, 'orders'));
+      setAdminOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'adminOrders');
     }
   };
 
   const fetchAdminCustomers = async () => {
-    if (!token || currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') return;
     try {
-      const res = await fetch('/api/admin/customers', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) setAdminCustomers(await handleResponse(res));
+      const q = query(collection(db, 'users'), where('role', '==', 'customer'));
+      const snapshot = await getDocs(q);
+      setAdminCustomers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'adminCustomers');
     }
   };
 
   const fetchAdminInvestments = async () => {
-    if (!token || currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') return;
     try {
-      const res = await fetch('/api/admin/investments', {
-        headers: { Authorization: `Bearer ${token}` }
+      const oppsSnap = await getDocs(collection(db, 'investmentOpportunities'));
+      const invsSnap = await getDocs(collection(db, 'investments'));
+      setAdminInvestments({
+        opportunities: oppsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as InvestmentOpportunity)),
+        investments: invsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Investment))
       });
-      if (res.ok) setAdminInvestments(await handleResponse(res));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'adminInvestments');
     }
   };
 
   const fetchAdminReviews = async () => {
-    if (!token || currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') return;
     try {
-      const res = await fetch('/api/admin/reviews', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) setAdminReviews(await handleResponse(res));
+      const snapshot = await getDocs(collection(db, 'reviews'));
+      setAdminReviews(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Review)));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'adminReviews');
+    }
+  };
+
+  const fetchAuditLogs = async () => {
+    if (currentUser?.role !== 'admin') return;
+    try {
+      const q = query(collection(db, 'auditLogs'), orderBy('createdAt', 'desc'), limit(100));
+      const snapshot = await getDocs(q);
+      setAuditLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AuditLog)));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.LIST, 'auditLogs');
+    }
+  };
+
+  const updateUserRole = async (targetUserId: string, newRole: Role, targetUserName: string) => {
+    const isSuperAdmin = currentUser?.email === 'bushraanwar854@gmail.com';
+    
+    // Only Super Admin can grant/revoke admin roles
+    if (newRole === 'admin' || newRole === 'moderator' || newRole === 'support') {
+      if (!isSuperAdmin) {
+        throw new Error("Unauthorized: Only the Super Admin can grant administrative roles.");
+      }
+    }
+
+    if (currentUser?.role !== 'admin' && !isSuperAdmin) {
+      throw new Error("Unauthorized: Only admins can manage roles.");
+    }
+
+    try {
+      const userRef = doc(db, 'users', targetUserId);
+      await updateDoc(userRef, { role: newRole });
+
+      // Determine specific audit action
+      let auditAction: any = 'UPDATE_USER_ROLE';
+      if (newRole === 'admin') auditAction = 'GRANT_ADMIN';
+      else if (newRole === 'moderator') auditAction = 'GRANT_MODERATOR';
+      else if (newRole === 'support') auditAction = 'GRANT_SUPPORT';
+      else if (newRole === 'customer' || newRole === 'vendor') auditAction = 'REVOKE_ADMIN';
+
+      // Create Audit Log
+      await addDoc(collection(db, 'auditLogs'), {
+        action: auditAction,
+        performedBy: currentUser.id,
+        performedByName: currentUser.name,
+        targetUserId,
+        targetUserName,
+        details: `Role updated to ${newRole}`,
+        createdAt: serverTimestamp()
+      });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${targetUserId}`);
+      throw e;
+    }
+  };
+
+  const updateUserStatus = async (targetUserId: string, newStatus: string, targetUserName: string) => {
+    const isSuperAdmin = currentUser?.email === 'bushraanwar854@gmail.com';
+    if (currentUser?.role !== 'admin' && !isSuperAdmin) {
+      throw new Error("Unauthorized: Only admins can manage user status.");
+    }
+
+    try {
+      const userRef = doc(db, 'users', targetUserId);
+      await updateDoc(userRef, { status: newStatus });
+
+      // Create Audit Log
+      await addDoc(collection(db, 'auditLogs'), {
+        action: newStatus === 'suspended' ? 'SUSPEND_USER' : 'ACTIVATE_USER',
+        performedBy: currentUser.id,
+        performedByName: currentUser.name,
+        targetUserId,
+        targetUserName,
+        details: `Status updated to ${newStatus}`,
+        createdAt: serverTimestamp()
+      });
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${targetUserId}`);
+      throw e;
     }
   };
 
   const deleteReviewAdmin = async (id: string) => {
-    if (!token || currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') return;
     try {
-      const res = await fetch(`/api/admin/reviews/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) fetchAdminReviews();
+      await deleteDoc(doc(db, 'reviews', id));
+      fetchAdminReviews();
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.DELETE, `reviews/${id}`);
     }
   };
 
   const recalculateTopRated = async () => {
-    if (!token || currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') return;
     try {
-      const res = await fetch('/api/admin/recalculate-top-rated', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        fetchAdminVendors();
-        fetchAdminStats();
+      // Logic to recalculate top rated vendors based on reviews
+      const vendorsSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'vendor')));
+      for (const vendorDoc of vendorsSnap.docs) {
+        const reviewsSnap = await getDocs(query(collection(db, 'reviews'), where('vendorId', '==', vendorDoc.id)));
+        const reviews = reviewsSnap.docs.map(d => d.data());
+        const avgRating = reviews.length > 0 ? reviews.reduce((sum, r: any) => sum + r.rating, 0) / reviews.length : 0;
+        const isTopRated = avgRating >= 4.5 && reviews.length >= 5;
+        await updateDoc(doc(db, 'users', vendorDoc.id), { isTopRated });
       }
+      fetchAdminVendors();
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.UPDATE, 'users');
     }
   };
 
   useEffect(() => {
-    const initAuth = async () => {
-      if (token) {
-        try {
-          const res = await fetch('/api/account/me', {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (res.ok) {
-            const data = await handleResponse(res);
-            setCurrentUser(data.user);
-          } else {
-            setToken(null);
-            localStorage.removeItem('auth_token');
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      setIsAuthReady(true);
-    };
-    initAuth();
-  }, [token]);
+    setIsAuthReady(true);
+  }, []);
 
   const fetchSubscriptions = async () => {
-    if (!token) return;
+    if (!currentUser) return;
     try {
-      const res = await fetch('/api/subscriptions', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) setSubscriptions(await handleResponse(res));
+      const q = query(collection(db, 'subscriptions'), where('customerId', '==', currentUser.id), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      setSubscriptions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Subscription)));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'subscriptions');
     }
   };
 
   const fetchGroupPurchases = async () => {
     try {
-      const res = await fetch('/api/group-purchases');
-      if (res.ok) setGroupPurchases(await handleResponse(res));
+      const q = query(collection(db, 'groupPurchases'), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      setGroupPurchases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GroupPurchase)));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'groupPurchases');
     }
   };
 
   const fetchInvestmentOpportunities = async () => {
     try {
-      const res = await fetch('/api/investments/opportunities');
-      if (res.ok) setInvestmentOpportunities(await handleResponse(res));
+      const q = query(collection(db, 'investmentOpportunities'), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      setInvestmentOpportunities(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InvestmentOpportunity)));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'investmentOpportunities');
     }
   };
 
   const fetchMyInvestments = async () => {
-    if (!token) return;
+    if (!currentUser) return;
     try {
-      const res = await fetch('/api/investments/my-investments', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) setMyInvestments(await handleResponse(res));
+      const q = query(collection(db, 'investments'), where('investorId', '==', currentUser.id), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      setMyInvestments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Investment)));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'investments');
     }
   };
 
   const fetchVendorInvestments = async () => {
-    if (!token || currentUser?.role !== 'vendor') return;
+    if (!currentUser || currentUser.role !== 'vendor') return;
     try {
-      const res = await fetch('/api/vendor/investments', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) setVendorInvestments(await handleResponse(res));
+      const q = query(collection(db, 'investments'), where('vendorId', '==', currentUser.id), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      setVendorInvestments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Investment)));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'investments');
     }
   };
 
   const fetchInvestorWallet = async () => {
-    if (!token) return;
+    if (!currentUser) return;
     try {
-      const res = await fetch('/api/investments/wallet', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) setInvestorWallet(await handleResponse(res));
+      const docRef = doc(db, 'investorWallets', currentUser.id);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        setInvestorWallet(docSnap.data() as InvestorWallet);
+      } else {
+        const newWallet: InvestorWallet = {
+          userId: currentUser.id,
+          balance: 0,
+          totalEarned: 0,
+          updatedAt: ensureDate(new Date()).toISOString()
+        };
+        await setDoc(docRef, newWallet);
+        setInvestorWallet(newWallet);
+      }
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.GET, `investorWallets/${currentUser.id}`);
     }
   };
 
   const createInvestmentOpportunity = async (data: any) => {
-    if (!token) return;
+    if (!currentUser || currentUser.role !== 'vendor') return;
     try {
-      const res = await fetch('/api/investments/opportunities', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(data)
+      const newOpportunity = cleanData({
+        ...data,
+        vendorId: currentUser.id,
+        currentFunding: 0,
+        status: 'active',
+        createdAt: serverTimestamp()
       });
-      if (res.ok) {
-        await fetchInvestmentOpportunities();
-      } else {
-        const errorData = await handleResponse(res);
-        throw new Error(errorData.error || 'Failed to create investment opportunity');
-      }
+      await addDoc(collection(db, 'investmentOpportunities'), newOpportunity);
+      fetchInvestmentOpportunities();
     } catch (e) {
-      console.error(e);
-      throw e;
+      handleFirestoreError(e, OperationType.WRITE, 'investmentOpportunities');
     }
   };
 
   const invest = async (opportunityId: string, tierId: string) => {
-    if (!token) return;
+    if (!currentUser) return;
     try {
-      const res = await fetch('/api/investments/invest', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ opportunityId, tierId })
-      });
-      if (res.ok) {
-        fetchMyInvestments();
-        fetchInvestorWallet();
-        fetchInvestmentOpportunities();
+      const oppRef = doc(db, 'investmentOpportunities', opportunityId);
+      const oppSnap = await getDoc(oppRef);
+      if (!oppSnap.exists()) return;
+      const oppData = oppSnap.data();
+      const tier = oppData.tiers.find((t: any) => t.id === tierId);
+      if (!tier) return;
+
+      const newInvestment = {
+        opportunityId,
+        productId: oppData.productId,
+        productName: oppData.productName,
+        investorId: currentUser.id,
+        tierId,
+        tierName: tier.name,
+        amount: tier.amount,
+        expectedReturnPct: tier.returnPct,
+        earnedSoFar: 0,
+        status: 'active',
+        createdAt: serverTimestamp()
+      };
+
+      await addDoc(collection(db, 'investments'), newInvestment);
+      try {
+        await updateDoc(oppRef, {
+          currentFunding: increment(tier.amount)
+        });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, `investmentOpportunities/${opportunityId}`);
       }
+      
+      // Update wallet
+      const walletRef = doc(db, 'investorWallets', currentUser.id);
+      try {
+        await setDoc(walletRef, {
+          balance: increment(-tier.amount),
+          updatedAt: ensureDate(new Date()).toISOString()
+        }, { merge: true });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `investorWallets/${currentUser.id}`);
+      }
+
+      fetchMyInvestments();
+      fetchInvestorWallet();
+      fetchInvestmentOpportunities();
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.WRITE, 'investments');
     }
   };
 
   const withdrawEarnings = async (amount: number) => {
-    if (!token) return;
+    if (!currentUser) return;
     try {
-      const res = await fetch('/api/investments/withdraw', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ amount })
-      });
-      if (res.ok) fetchInvestorWallet();
+      const walletRef = doc(db, 'investorWallets', currentUser.id);
+      await setDoc(walletRef, {
+        balance: increment(-amount),
+        updatedAt: ensureDate(new Date()).toISOString()
+      }, { merge: true });
+      fetchInvestorWallet();
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.WRITE, `investorWallets/${currentUser.id}`);
     }
   };
 
   const createSubscription = async (productId: string, frequency: 'daily' | 'weekly' | 'monthly', quantity: number) => {
-    if (!token) return;
+    if (!currentUser) return;
     try {
-      const res = await fetch('/api/subscriptions', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ productId, frequency, quantity })
+      const product = products.find(p => p.id === productId);
+      if (!product) return;
+
+      const newSubscription = cleanData({
+        customerId: currentUser.id,
+        productId,
+        productName: product.name,
+        vendorId: product.vendorId,
+        vendorName: product.vendorName,
+        frequency,
+        quantity,
+        price: product.price,
+        currency: product.currency,
+        status: 'active',
+        nextDelivery: ensureDate(new Date(Date.now() + 86400000)).toISOString(), // Tomorrow
+        createdAt: serverTimestamp()
       });
-      if (res.ok) fetchSubscriptions();
+
+      await addDoc(collection(db, 'subscriptions'), newSubscription);
+      fetchSubscriptions();
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.WRITE, 'subscriptions');
     }
   };
 
   const updateSubscriptionStatus = async (id: string, status: 'active' | 'paused' | 'cancelled') => {
-    if (!token) return;
     try {
-      const res = await fetch(`/api/subscriptions/${id}`, {
-        method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ status })
-      });
-      if (res.ok) fetchSubscriptions();
+      await updateDoc(doc(db, 'subscriptions', id), { status });
+      fetchSubscriptions();
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.UPDATE, `subscriptions/${id}`);
     }
   };
 
   const createGroupPurchase = async (productId: string, targetMembers: number, durationHours: number = 24) => {
-    if (!token) return;
+    if (!currentUser) return;
     try {
-      const res = await fetch('/api/group-purchases', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ productId, targetMembers, durationHours })
+      const product = products.find(p => p.id === productId);
+      if (!product) return;
+
+      const newGroup = cleanData({
+        productId,
+        productName: product.name,
+        vendorId: product.vendorId,
+        vendorName: product.vendorName,
+        targetMembers,
+        currentMembers: 1,
+        price: product.groupPrice || product.price,
+        currency: product.currency,
+        expiresAt: ensureDate(new Date(Date.now() + durationHours * 3600000)).toISOString(),
+        status: 'open',
+        createdAt: serverTimestamp(),
+        members: [{
+          id: Math.random().toString(36).substr(2, 9),
+          customerId: currentUser.id,
+          customerName: currentUser.name,
+          joinedAt: ensureDate(new Date()).toISOString()
+        }]
       });
-      if (res.ok) fetchGroupPurchases();
+
+      await addDoc(collection(db, 'groupPurchases'), newGroup);
+      fetchGroupPurchases();
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.WRITE, 'groupPurchases');
     }
   };
 
   const joinGroupPurchase = async (groupId: string) => {
-    if (!token) return;
+    if (!currentUser) return;
     try {
-      const res = await fetch(`/api/group-purchases/${groupId}/join`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        fetchGroupPurchases();
-        fetchOrders(); // Refresh orders in case group completed
-      } else {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to join group purchase');
+      const groupRef = doc(db, 'groupPurchases', groupId);
+      const groupSnap = await getDoc(groupRef);
+      if (!groupSnap.exists()) return;
+      const groupData = groupSnap.data();
+
+      if (groupData.status !== 'open') throw new Error('Group purchase is no longer open');
+      if (groupData.members.some((m: any) => m.customerId === currentUser.id)) throw new Error('You have already joined this group');
+
+      const newMember = {
+        id: Math.random().toString(36).substr(2, 9),
+        customerId: currentUser.id,
+        customerName: currentUser.name,
+        joinedAt: ensureDate(new Date()).toISOString()
+      };
+
+      const newMembers = [...groupData.members, newMember];
+      const newCount = newMembers.length;
+      const isCompleted = newCount >= groupData.targetMembers;
+
+      try {
+        await updateDoc(groupRef, {
+          members: newMembers,
+          currentMembers: newCount,
+          status: isCompleted ? 'completed' : 'open'
+        });
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, `groupPurchases/${groupId}`);
       }
+
+      if (isCompleted) {
+        // Create orders for all members
+        for (const member of newMembers) {
+          const product = products.find(p => p.id === groupData.productId);
+          if (!product) continue;
+
+          const newOrder = {
+            customerId: member.customerId,
+            customerName: member.customerName,
+            vendorId: groupData.vendorId,
+            vendorName: groupData.vendorName,
+            items: [{
+              productId: groupData.productId,
+              productName: groupData.productName,
+              price: groupData.price,
+              currency: groupData.currency,
+              quantity: 1,
+              selectedVariations: {},
+              imageUrl: product.imageUrl
+            }],
+            totalAmount: groupData.price,
+            currency: groupData.currency,
+            shippingDetails: {}, // Members will need to provide this later or use default
+            paymentMethod: 'wallet',
+            status: 'pending',
+            history: [{
+              id: Math.random().toString(36).substr(2, 9),
+              status: 'pending',
+              description: 'Group purchase completed, order created',
+              timestamp: ensureDate(new Date()).toISOString()
+            }],
+            createdAt: serverTimestamp()
+          };
+          await addDoc(collection(db, 'orders'), newOrder);
+        }
+      }
+
+      fetchGroupPurchases();
+      fetchOrders();
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.WRITE, 'groupPurchases');
       throw e;
     }
   };
 
   useEffect(() => {
-    fetchProducts();
-    fetchVendors();
-    fetchGroupPurchases();
-    fetchInvestmentOpportunities();
-    if (token) {
-      fetchOrders();
-      fetchNotifications();
-      fetchConversations();
-      fetchSubscriptions();
-      fetchMyInvestments();
-      fetchVendorInvestments();
-      fetchInvestorWallet();
-      if (currentUser?.role === 'admin') {
-        fetchAdminStats();
-        fetchAdminVendors();
-        fetchAdminProducts();
-        fetchAdminOrders();
-        fetchAdminCustomers();
+    // Real-time listeners
+    const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
+      setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
+      setLoading(false);
+    }, (error) => {
+      if (auth.currentUser) {
+        handleFirestoreError(error, OperationType.LIST, 'products');
       }
-    }
+      setLoading(false);
+    });
 
-    const newSocket = io();
-    setSocket(newSocket);
+    const unsubVendors = onSnapshot(query(collection(db, 'users'), where('role', '==', 'vendor')), (snapshot) => {
+      setVendors(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
+    }, (error) => {
+      if (auth.currentUser) {
+        handleFirestoreError(error, OperationType.LIST, 'users');
+      }
+    });
+
+    let unsubOrders: () => void;
+    let unsubNotifications: () => void;
+    let unsubConversations: () => void;
 
     if (currentUser) {
-      newSocket.emit('join', currentUser.id);
+      const ordersQ = query(
+        collection(db, 'orders'), 
+        where(currentUser.role === 'vendor' ? 'vendorId' : 'customerId', '==', currentUser.id),
+        orderBy('createdAt', 'desc')
+      );
+      unsubOrders = onSnapshot(ordersQ, (snapshot) => {
+        setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
+      }, (error) => {
+        if (auth.currentUser) {
+          handleFirestoreError(error, OperationType.LIST, 'orders');
+        }
+      });
+
+      const notifQ = query(collection(db, 'notifications'), where('userId', '==', currentUser.id), orderBy('createdAt', 'desc'));
+      unsubNotifications = onSnapshot(notifQ, (snapshot) => {
+        setNotifications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Notification)));
+      }, (error) => {
+        if (auth.currentUser) {
+          handleFirestoreError(error, OperationType.LIST, 'notifications');
+        }
+      });
+
+      // Conversations listener
+      const convQ = query(
+        collection(db, 'conversations'), 
+        where('participants', 'array-contains', currentUser.id),
+        orderBy('updatedAt', 'desc')
+      );
+      unsubConversations = onSnapshot(convQ, (snapshot) => {
+        setConversations(snapshot.docs.map(doc => {
+          const data = doc.data();
+          const otherUserId = data.participants.find((p: string) => p !== currentUser.id);
+          return {
+            otherUserId,
+            otherUserName: data.participantNames[otherUserId],
+            otherUserProfileImage: data.participantImages?.[otherUserId],
+            lastMessage: data.lastMessage,
+            unreadCount: data.unreadCounts?.[currentUser.id] || 0
+          } as ChatConversation;
+        }));
+      }, (error) => {
+        if (auth.currentUser) {
+          handleFirestoreError(error, OperationType.LIST, 'conversations');
+        }
+      });
     }
 
-    newSocket.on('products_updated', fetchProducts);
-    newSocket.on('vendors_updated', fetchVendors);
-    newSocket.on('group_purchases_updated', fetchGroupPurchases);
-    newSocket.on('investments_updated', () => {
-      fetchInvestmentOpportunities();
-      if (token) {
-        fetchMyInvestments();
-        fetchVendorInvestments();
-      }
-    });
-    newSocket.on('wallet_updated', () => {
-      if (token) fetchInvestorWallet();
-    });
-    newSocket.on('orders_updated', () => {
-      if (token) fetchOrders();
-    });
-    newSocket.on('notifications_updated', () => {
-      if (token) fetchNotifications();
-    });
-    newSocket.on('new_message', (message: ChatMessage) => {
-      const activeId = activeChatUserIdRef.current;
-      const currentUserId = currentUserRef.current?.id;
-      
-      // If the message is for the current active chat, add it to activeMessages
-      setActiveMessages(prev => {
-        const isFromActive = message.senderId === activeId;
-        const isToActive = message.receiverId === activeId;
-        const isFromMe = message.senderId === currentUserId;
-        const isToMe = message.receiverId === currentUserId;
-
-        if ((isFromActive && isToMe) || (isFromMe && isToActive)) {
-          if (prev.find(m => m.id === message.id)) return prev;
-          return [...prev, message];
-        }
-        return prev;
-      });
-      // Always refresh conversations list
-      fetchConversations();
-    });
-
     return () => {
-      newSocket.disconnect();
+      unsubProducts();
+      unsubVendors();
+      unsubOrders?.();
+      unsubNotifications?.();
+      unsubConversations?.();
     };
-  }, [token, currentUser?.id]);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     localStorage.setItem('halal_cart', JSON.stringify(cart));
   }, [cart]);
 
-  const login = (user: User, newToken: string) => {
-    setCurrentUser(user);
-    setToken(newToken);
-    localStorage.setItem('auth_token', newToken);
-  };
-
-  const logout = () => {
-    setCurrentUser(null);
-    setToken(null);
-    localStorage.removeItem('auth_token');
-  };
-
-  const addProduct = async (product: Omit<Product, 'id' | 'vendorId' | 'vendorName'>) => {
-    if (!currentUser || currentUser.role !== 'vendor' || !token) return;
+  const login = async (email: string, password: string) => {
     try {
-      const res = await fetch('/api/products', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          ...product,
-          vendorName: currentUser.storeName || currentUser.name
-        })
-      });
-      if (res.ok) {
-        await fetchProducts();
-      } else {
-        const errorData = await handleResponse(res);
-        throw new Error(errorData.error || 'Failed to add product');
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (e) {
+      console.error(e);
+      throw e;
+    }
+  };
+
+  const loginWithGoogle = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (e) {
+      console.error(e);
+      throw e;
+    }
+  };
+
+  const resetPassword = async (email: string) => {
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (e) {
+      console.error(e);
+      throw e;
+    }
+  };
+
+  const signup = async (email: string, password: string, profile: Partial<User>) => {
+    try {
+      const { user } = await createUserWithEmailAndPassword(auth, email, password);
+      // Create user document in Firestore
+      try {
+        await setDoc(doc(db, 'users', user.uid), cleanData({
+          ...profile,
+          email,
+          status: 'active',
+          createdAt: serverTimestamp()
+        }));
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}`);
       }
     } catch (e) {
       console.error(e);
@@ -743,44 +1168,91 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const updatePassword = async (newPassword: string) => {
+    if (!auth.currentUser) throw new Error("No user logged in");
+    try {
+      await firebaseUpdatePassword(auth.currentUser, newPassword);
+    } catch (e) {
+      console.error(e);
+      throw e;
+    }
+  };
+
+  const logout = async () => {
+    await signOut(auth);
+    setCurrentUser(null);
+  };
+
+  const addProduct = async (product: Omit<Product, 'id' | 'vendorId' | 'vendorName'>) => {
+    if (!currentUser || currentUser.role !== 'vendor') return;
+    try {
+      const newProduct = cleanData({
+        ...product,
+        vendorId: currentUser.id,
+        vendorName: currentUser.storeName || currentUser.name,
+        createdAt: serverTimestamp(),
+        rating: 0,
+        reviewCount: 0
+      });
+      await addDoc(collection(db, 'products'), newProduct);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, 'products');
+    }
+  };
+
   const updateProduct = async (product: Product) => {
-    if (!token) return;
-    await fetch(`/api/products/${product.id}`, {
-      method: 'PUT',
-      headers: { 
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify(product)
-    });
+    const { id, ...data } = product;
+    try {
+      await updateDoc(doc(db, 'products', id), cleanData(data));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `products/${id}`);
+    }
   };
 
   const deleteProduct = async (id: string) => {
-    if (!token) return;
-    await fetch(`/api/products/${id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    try {
+      await deleteDoc(doc(db, 'products', id));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `products/${id}`);
+    }
+  };
+
+  const getCartTotal = (): number => {
+    return cart.reduce((sum, item) => {
+      const itemTotal = item.product.price * item.quantity;
+      // Always convert to USD as the base for the total sum
+      return sum + convertPrice(itemTotal, item.product.currency, 'USD');
+    }, 0);
   };
 
   const addToCart = (product: Product, quantity: number, selectedVariations?: Record<string, string>) => {
     if (currentUser?.id === product.vendorId) {
-      alert('You cannot purchase your own product.');
       return;
     }
     setCart(prev => {
       const existingItemIndex = prev.findIndex(item => 
         item.product.id === product.id && 
-        JSON.stringify(item.selectedVariations) === JSON.stringify(selectedVariations || {})
+        JSON.stringify(item.selectedVariations || {}) === JSON.stringify(selectedVariations || {})
       );
 
       if (existingItemIndex >= 0) {
         const newCart = [...prev];
-        newCart[existingItemIndex].quantity += quantity;
+        const existingItem = newCart[existingItemIndex];
+        
+        // Update quantity and ensure price/stock/image is current for the variation
+        existingItem.quantity += quantity;
+        existingItem.product = {
+          ...existingItem.product,
+          price: product.price,
+          stock: product.stock,
+          imageUrl: product.imageUrl
+        };
+        
         return newCart;
       }
 
       return [...prev, {
+        productId: product.id,
         product,
         quantity,
         selectedVariations
@@ -796,8 +1268,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const clearCart = () => setCart([]);
 
-  const placeOrder = async (shippingDetails: ShippingDetails, paymentMethod: PaymentMethod) => {
-    if (!currentUser || cart.length === 0 || !token) return;
+  const placeOrder = async (shippingDetails: ShippingDetails, paymentMethods: Record<string, PaymentMethodType>) => {
+    if (!currentUser || cart.length === 0) return;
 
     // Group cart items by vendor
     const itemsByVendor = cart.reduce((acc, item) => {
@@ -807,13 +1279,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }, {} as Record<string, CartItem[]>);
 
     // Create an order for each vendor
-    for (const [vendorId, items] of Object.entries(itemsByVendor)) {
+    for (const [vendorId, items] of Object.entries(itemsByVendor) as [string, CartItem[]][]) {
       const vendor = vendors.find(v => v.id === vendorId);
       const orderCurrency = (items as CartItem[])[0]?.product?.currency || 'USD';
       const totalAmount = (items as CartItem[]).reduce((sum, item) => {
         const itemTotal = item.product.price * item.quantity;
         return sum + convertPrice(itemTotal, item.product.currency, orderCurrency);
       }, 0);
+
+      const paymentMethod = paymentMethods[vendorId] || 'card';
+      const vendorPaymentDetails = vendor?.paymentMethods?.find(m => m.type === paymentMethod);
 
       const orderItems = (items as CartItem[]).map(item => ({
         productId: item.product.id,
@@ -825,246 +1300,315 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         imageUrl: item.product.imageUrl
       }));
 
-      await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          vendorId,
-          vendorName: vendor?.storeName || vendor?.name || 'Unknown Vendor',
-          items: orderItems,
-          totalAmount,
-          currency: orderCurrency,
-          shippingDetails,
-          paymentMethod
-        })
+      const newOrder = cleanData({
+        customerId: currentUser.id,
+        customerName: currentUser.name,
+        vendorId,
+        vendorName: vendor?.storeName || vendor?.name || 'Unknown Vendor',
+        items: orderItems,
+        totalAmount,
+        currency: orderCurrency,
+        shippingDetails,
+        paymentMethod,
+        vendorPaymentDetails,
+        status: 'pending',
+        paymentStatus: 'pending',
+        history: [{
+          id: Math.random().toString(36).substr(2, 9),
+          status: 'pending',
+          description: `Order placed successfully. Awaiting payment via ${paymentMethod}.`,
+          timestamp: ensureDate(new Date()).toISOString()
+        }],
+        createdAt: serverTimestamp()
       });
+
+      try {
+        await addDoc(collection(db, 'orders'), newOrder);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, 'orders');
+      }
+      
+      // Update product stock
+      for (const item of items) {
+        try {
+          await updateDoc(doc(db, 'products', item.product.id), {
+            stock: increment(-item.quantity)
+          });
+        } catch (e) {
+          handleFirestoreError(e, OperationType.UPDATE, `products/${item.product.id}`);
+        }
+      }
     }
 
     clearCart();
     
     // Update local user state with new shipping details
     if (currentUser) {
-      setCurrentUser({
-        ...currentUser,
-        lastShippingDetails: shippingDetails
-      });
+      await updateUserProfile({ lastShippingDetails: shippingDetails });
     }
   };
 
   const updateOrderStatus = async (orderId: string, status: OrderStatus, description?: string) => {
-    if (!token) return;
-    await fetch(`/api/orders/${orderId}/status`, {
-      method: 'PUT',
-      headers: { 
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({ status, description })
-    });
+    const orderRef = doc(db, 'orders', orderId);
+    let orderSnap;
+    try {
+      orderSnap = await getDoc(orderRef);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.GET, `orders/${orderId}`);
+      return;
+    }
+    if (!orderSnap.exists()) return;
+    
+    const history = orderSnap.data().history || [];
+    const newHistoryItem = {
+      id: Math.random().toString(36).substr(2, 9),
+      status,
+      description: description || `Order status updated to ${status}`,
+      timestamp: ensureDate(new Date()).toISOString()
+    };
+
+    try {
+      await updateDoc(orderRef, cleanData({
+        status,
+        history: [...history, newHistoryItem]
+      }));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `orders/${orderId}`);
+    }
   };
 
   const updateVendorProfile = async (vendor: User) => {
-    if (!token) return;
-    await fetch('/api/users/profile', {
-      method: 'PUT',
-      headers: { 
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify(vendor)
-    });
-    setCurrentUser(vendor);
+    try {
+      await updateDoc(doc(db, 'users', vendor.id), cleanData(vendor));
+      setCurrentUser(vendor);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `users/${vendor.id}`);
+    }
   };
 
   const updateUserProfile = async (userData: Partial<User>) => {
-    if (!token || !currentUser) return;
+    if (!currentUser) return;
     try {
-      const res = await fetch('/api/users/profile', {
-        method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ ...currentUser, ...userData })
-      });
-      if (res.ok) {
-        setCurrentUser({ ...currentUser, ...userData } as User);
-      }
+      await updateDoc(doc(db, 'users', currentUser.id), cleanData(userData));
+      setCurrentUser({ ...currentUser, ...userData } as User);
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.UPDATE, `users/${currentUser.id}`);
     }
   };
 
   const toggleWishlist = async (productId: string) => {
-    if (!token || !currentUser) return;
+    if (!currentUser) return;
+    const wishlist = currentUser.wishlist || [];
+    const newWishlist = wishlist.includes(productId)
+      ? wishlist.filter(id => id !== productId)
+      : [...wishlist, productId];
+    
     try {
-      const res = await fetch('/api/users/wishlist', {
-        method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ productId })
-      });
-      if (res.ok) {
-        const data = await handleResponse(res);
-        setCurrentUser({ ...currentUser, wishlist: data.wishlist });
-      }
+      await updateDoc(doc(db, 'users', currentUser.id), { wishlist: newWishlist });
+      setCurrentUser({ ...currentUser, wishlist: newWishlist });
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.UPDATE, `users/${currentUser.id}`);
     }
   };
 
   const updateVendorStatus = async (vendorId: string, status: string) => {
-    if (!token || currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') return;
     try {
-      const res = await fetch(`/api/admin/vendors/${vendorId}/status`, {
-        method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ status })
-      });
-      if (res.ok) {
-        fetchAdminVendors();
-        fetchAdminStats();
-      }
+      await updateDoc(doc(db, 'users', vendorId), { status });
+      fetchAdminVendors();
+      fetchAdminStats();
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.UPDATE, `users/${vendorId}`);
     }
   };
 
   const deleteUserAdmin = async (id: string) => {
-    if (!token || currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') return;
     try {
-      const res = await fetch(`/api/admin/users/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        fetchAdminVendors();
-        fetchAdminCustomers();
-        fetchAdminStats();
-      }
+      await deleteDoc(doc(db, 'users', id));
+      fetchAdminVendors();
+      fetchAdminCustomers();
+      fetchAdminStats();
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.DELETE, `users/${id}`);
     }
   };
 
   const deleteProductAdmin = async (id: string) => {
-    if (!token || currentUser?.role !== 'admin') return;
+    if (currentUser?.role !== 'admin') return;
     try {
-      const res = await fetch(`/api/admin/products/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        fetchAdminProducts();
-        fetchProducts();
-      }
+      await deleteDoc(doc(db, 'products', id));
+      fetchAdminProducts();
+      // fetchProducts();
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.DELETE, `products/${id}`);
     }
   };
 
   const updateOrderStatusAdmin = async (orderId: string, status: OrderStatus, description?: string) => {
-    if (!token || currentUser?.role !== 'admin') return;
-    try {
-      const res = await fetch(`/api/admin/orders/${orderId}/status`, {
-        method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ status, description })
-      });
-      if (res.ok) {
-        fetchAdminOrders();
-        fetchAdminStats();
-      }
-    } catch (e) {
-      console.error(e);
-    }
+    if (currentUser?.role !== 'admin') return;
+    await updateOrderStatus(orderId, status, description);
+    fetchAdminOrders();
+    fetchAdminStats();
   };
 
   const markNotificationAsRead = async (id: string) => {
-    if (!token) return;
     try {
-      await fetch(`/api/notifications/${id}/read`, {
-        method: 'PUT',
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await updateDoc(doc(db, 'notifications', id), { isRead: true });
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.UPDATE, `notifications/${id}`);
     }
   };
+
+  useEffect(() => {
+    if (!activeChatUserId) {
+      setActiveMessages([]);
+    }
+  }, [activeChatUserId]);
 
   const fetchConversations = async () => {
-    if (!token) return;
-    try {
-      const res = await fetch('/api/chat/conversations', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) setConversations(await handleResponse(res));
-    } catch (e) {
-      console.error(e);
-    }
+    // Handled by onSnapshot in useEffect
   };
 
-  const fetchMessages = async (otherUserId: string) => {
-    if (!token) return;
+  const fetchMessages = (otherUserId: string) => {
+    if (!currentUser) return () => {};
     setActiveChatUserId(otherUserId);
-    try {
-      const res = await fetch(`/api/chat/messages/${otherUserId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        setActiveMessages(await handleResponse(res));
-        fetchConversations(); // Refresh unread counts
+    
+    const participants = [currentUser.id, otherUserId].sort();
+    const conversationId = participants.join('_');
+    
+    const q = query(collection(db, 'conversations', conversationId, 'messages'), orderBy('createdAt', 'asc'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setActiveMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChatMessage)));
+    }, (error) => {
+      // Only report if we have a user, otherwise it's likely a logout event
+      if (auth.currentUser) {
+        handleFirestoreError(error, OperationType.LIST, `conversations/${conversationId}/messages`);
       }
-    } catch (e) {
-      console.error(e);
-    }
+    });
+
+    // Mark as read
+    const markAsRead = async () => {
+      const convRef = doc(db, 'conversations', conversationId);
+      try {
+        const convSnap = await getDoc(convRef);
+        if (convSnap.exists()) {
+          await updateDoc(convRef, {
+            [`unreadCounts.${currentUser.id}`]: 0
+          });
+        }
+      } catch (e) {
+        // Ignore if we can't mark as read (e.g. conversation doesn't exist yet)
+        console.warn("Could not mark conversation as read:", e);
+      }
+    };
+    markAsRead();
+
+    return unsubscribe;
   };
 
   const sendMessage = async (receiverId: string, content: string) => {
-    if (!token || !content.trim()) return;
+    if (!currentUser || !content.trim()) return;
+    
+    const participants = [currentUser.id, receiverId].sort();
+    const conversationId = participants.join('_');
+    
+    const messageData = {
+      senderId: currentUser.id,
+      receiverId,
+      content,
+      isRead: false,
+      createdAt: serverTimestamp()
+    };
+
     try {
-      const res = await fetch('/api/chat/send', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ receiverId, content })
-      });
-      if (res.ok) {
-        // Message will be added via socket event
+      await addDoc(collection(db, 'conversations', conversationId, 'messages'), cleanData(messageData));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, `conversations/${conversationId}/messages`);
+    }
+
+    // Update conversation metadata
+    const convRef = doc(db, 'conversations', conversationId);
+    let convSnap;
+    let receiverData;
+    try {
+      convSnap = await getDoc(convRef);
+      const receiverDoc = await getDoc(doc(db, 'users', receiverId));
+      receiverData = receiverDoc.data();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.GET, `conversations/${conversationId} or users/${receiverId}`);
+      return;
+    }
+    
+    const updateData = cleanData({
+      participants,
+      participantNames: {
+        [currentUser.id]: currentUser.name,
+        [receiverId]: receiverData?.name || 'Unknown'
+      },
+      participantImages: {
+        [currentUser.id]: currentUser.profileImage || '',
+        [receiverId]: receiverData?.profileImage || ''
+      },
+      lastMessage: {
+        ...messageData,
+        createdAt: ensureDate(new Date()).toISOString()
+      },
+      updatedAt: serverTimestamp(),
+      [`unreadCounts.${receiverId}`]: increment(1)
+    });
+
+    try {
+      if (convSnap.exists()) {
+        await updateDoc(convRef, updateData);
+      } else {
+        await setDoc(convRef, updateData);
       }
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.WRITE, `conversations/${conversationId}`);
     }
   };
 
   const submitReview = async (review: { productId?: string, vendorId?: string, rating: number, comment: string }) => {
-    if (!token) return;
+    if (!currentUser) return;
     try {
-      const res = await fetch('/api/reviews', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify(review)
+      const newReview = cleanData({
+        ...review,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userProfileImage: currentUser.profileImage || '',
+        isVerifiedPurchase: true, // Simplified
+        createdAt: serverTimestamp()
       });
-      if (res.ok) {
-        fetchProducts();
-        fetchVendors();
+      try {
+        await addDoc(collection(db, 'reviews'), newReview);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, 'reviews');
+      }
+      
+      // Update product/vendor rating
+      if (review.productId) {
+        const productRef = doc(db, 'products', review.productId);
+        try {
+          const productSnap = await getDoc(productRef);
+          if (productSnap.exists()) {
+            const data = productSnap.data();
+            const newCount = (data.reviewCount || 0) + 1;
+            const newRating = ((data.rating || 0) * (data.reviewCount || 0) + review.rating) / newCount;
+            try {
+              await updateDoc(productRef, {
+                rating: newRating,
+                reviewCount: newCount
+              });
+            } catch (e) {
+              handleFirestoreError(e, OperationType.UPDATE, `products/${review.productId}`);
+            }
+          }
+        } catch (e) {
+          handleFirestoreError(e, OperationType.GET, `products/${review.productId}`);
+        }
       }
     } catch (e) {
       console.error(e);
@@ -1073,20 +1617,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchProductReviews = async (productId: string): Promise<Review[]> => {
     try {
-      const res = await fetch(`/api/reviews/product/${productId}`);
-      if (res.ok) return await handleResponse(res);
+      const q = query(collection(db, 'reviews'), where('productId', '==', productId), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Review));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'reviews');
     }
     return [];
   };
 
   const fetchVendorReviews = async (vendorId: string): Promise<Review[]> => {
     try {
-      const res = await fetch(`/api/reviews/vendor/${vendorId}`);
-      if (res.ok) return await handleResponse(res);
+      const q = query(collection(db, 'reviews'), where('vendorId', '==', vendorId), orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Review));
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.LIST, 'reviews');
     }
     return [];
   };
@@ -1098,13 +1644,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setPreferredCurrency,
       formatPrice,
       convertPrice,
+      getCartTotal,
       login,
+      loginWithGoogle,
+      resetPassword,
+      signup,
       logout,
       products,
       addProduct,
       updateProduct,
       deleteProduct,
-      fetchProducts,
       cart,
       addToCart,
       removeFromCart,
@@ -1116,6 +1665,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       updateVendorProfile,
       updateUserProfile,
       toggleWishlist,
+      addVendorPaymentMethod,
+      updateVendorPaymentMethod,
+      deleteVendorPaymentMethod,
+      uploadPaymentReceipt,
+      reviewPaymentReceipt,
       adminStats,
       adminVendors,
       adminProducts,
@@ -1135,6 +1689,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       deleteProductAdmin,
       deleteReviewAdmin,
       updateOrderStatusAdmin,
+      updateUserRole,
+      updateUserStatus,
+      auditLogs,
+      fetchAuditLogs,
       recalculateTopRated,
       customers,
       isAuthReady,
@@ -1170,6 +1728,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       fetchInvestorWallet,
       withdrawEarnings,
       vendorInvestments,
+      updatePassword,
       userLocation,
       setUserLocation
     }}>

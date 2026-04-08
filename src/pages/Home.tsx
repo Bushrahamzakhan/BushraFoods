@@ -17,7 +17,7 @@ const CATEGORY_ICONS: Record<string, { icon: React.ReactNode, color: string, bg:
 };
 
 export default function Home() {
-  const { products, addToCart, formatPrice, fetchProducts, userLocation, setUserLocation, loading } = useAppContext();
+  const { products, addToCart, formatPrice, userLocation, setUserLocation, loading } = useAppContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialSearchTerm = searchParams.get('search') || '';
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
@@ -47,21 +47,54 @@ export default function Home() {
     }
   };
 
+  const [filteredProducts, setFilteredProducts] = useState<any[]>([]);
+
   useEffect(() => {
-    const filters = {
-      q: searchTerm,
-      category: selectedCategory === 'All' ? '' : selectedCategory,
-      minPrice,
-      maxPrice,
-      halal: halalOnly ? 'true' : '',
-      freshness,
-      origin,
-      availableInMyLocation: availableInMyLocation ? 'true' : '',
-      userCountry: userLocation.country,
-      userCity: userLocation.city
-    };
-    fetchProducts(filters);
-  }, [searchTerm, selectedCategory, minPrice, maxPrice, halalOnly, freshness, origin, availableInMyLocation, userLocation, fetchProducts]);
+    let result = [...products];
+
+    if (searchTerm) {
+      const search = searchTerm.toLowerCase();
+      result = result.filter(p => 
+        p.name.toLowerCase().includes(search) || 
+        p.description.toLowerCase().includes(search) ||
+        p.tags?.some((t: string) => t.toLowerCase().includes(search))
+      );
+    }
+
+    if (selectedCategory !== 'All') {
+      result = result.filter(p => p.category === selectedCategory);
+    }
+
+    if (minPrice) {
+      result = result.filter(p => p.price >= Number(minPrice));
+    }
+
+    if (maxPrice) {
+      result = result.filter(p => p.price <= Number(maxPrice));
+    }
+
+    if (halalOnly) {
+      result = result.filter(p => p.isHalalCertified === true);
+    }
+
+    if (freshness) {
+      result = result.filter(p => p.freshness === freshness);
+    }
+
+    if (origin) {
+      result = result.filter(p => p.originCountry === origin);
+    }
+
+    if (availableInMyLocation && userLocation.country) {
+      result = result.filter(p => 
+        p.availabilityScope === 'global' || 
+        (p.availabilityScope === 'country' && p.availableCountries?.includes(userLocation.country)) ||
+        (p.availabilityScope === 'local' && p.availableCities?.includes(userLocation.city))
+      );
+    }
+
+    setFilteredProducts(result);
+  }, [products, searchTerm, selectedCategory, minPrice, maxPrice, halalOnly, freshness, origin, availableInMyLocation, userLocation]);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -444,10 +477,10 @@ export default function Home() {
               <h2 className="text-2xl font-bold text-gray-900">
                 {searchTerm || selectedCategory !== 'All' || minPrice || maxPrice || halalOnly || freshness || origin ? 'Filtered Results' : 'All Products'}
               </h2>
-              <span className="text-sm text-gray-500">{products.length} items found</span>
+              <span className="text-sm text-gray-500">{filteredProducts.length} items found</span>
             </div>
             
-            {products.length === 0 ? (
+            {filteredProducts.length === 0 ? (
               <div className="text-center py-20 bg-white rounded-3xl border border-gray-100 shadow-sm">
                 <ShoppingBag className="w-16 h-16 text-gray-200 mx-auto mb-4" />
                 <h3 className="text-xl font-bold text-gray-900 mb-2">No products found</h3>
@@ -455,7 +488,7 @@ export default function Home() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-                {products.map(product => (
+                {filteredProducts.map(product => (
                   <ProductCard key={product.id} product={product} addToCart={addToCart} />
                 ))}
               </div>

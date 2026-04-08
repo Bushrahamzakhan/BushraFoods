@@ -4,23 +4,28 @@ import { useAppContext } from '../context/AppContext';
 import { 
   Package, Clock, CheckCircle, Truck, MapPin, 
   CreditCard, Banknote, User as UserIcon, Heart, 
-  Settings, ShoppingBag, ChevronRight, Star, MessageSquare, X, Users
+  Settings, ShoppingBag, ChevronRight, Star, MessageSquare, X, Users,
+  Eye, EyeOff, Lock, Upload
 } from 'lucide-react';
-import { OrderStatus } from '../types';
+import { OrderStatus, PaymentStatus } from '../types';
+import { ensureDate } from '../lib/utils';
 import { COUNTRIES } from '../constants';
 import ChatList from '../components/chat/ChatList';
 import ChatWindow from '../components/chat/ChatWindow';
+import PaymentReceiptUpload from '../components/PaymentReceiptUpload';
 
 export default function CustomerDashboard() {
   const { 
     currentUser, orders, products, formatPrice, updateUserProfile, 
-    toggleWishlist, conversations, sendMessage, userLocation, setUserLocation 
+    toggleWishlist, conversations, sendMessage, userLocation, setUserLocation,
+    updatePassword, uploadPaymentReceipt
   } = useAppContext();
   const navigate = useNavigate();
   const location = useLocation();
   const [activeTab, setActiveTab] = useState<'orders' | 'wishlist' | 'profile' | 'messages' | 'subscriptions' | 'groups'>('orders');
   const [selectedChatUserId, setSelectedChatUserId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [uploadingReceiptOrder, setUploadingReceiptOrder] = useState<any>(null);
   const { subscriptions, groupPurchases, updateSubscriptionStatus } = useAppContext();
 
   useEffect(() => {
@@ -42,6 +47,15 @@ export default function CustomerDashboard() {
     profileImage: currentUser?.profileImage || ''
   });
 
+  const [passwordData, setPasswordData] = useState({
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState(false);
+
   if (!currentUser) {
     return <Navigate to="/login" state={{ from: location }} />;
   }
@@ -58,7 +72,32 @@ export default function CustomerDashboard() {
     setTimeout(() => setSuccessMessage(null), 5000);
   };
 
-  const myOrders = orders.filter(o => o.customerId === currentUser.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(false);
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setPasswordError("Passwords do not match");
+      return;
+    }
+
+    if (passwordData.newPassword.length < 6) {
+      setPasswordError("Password must be at least 6 characters");
+      return;
+    }
+
+    try {
+      await updatePassword(passwordData.newPassword);
+      setPasswordSuccess(true);
+      setPasswordData({ newPassword: '', confirmPassword: '' });
+      setTimeout(() => setPasswordSuccess(false), 5000);
+    } catch (err: any) {
+      setPasswordError(err.message || "Failed to update password. You may need to re-authenticate.");
+    }
+  };
+
+  const myOrders = orders.filter(o => o.customerId === currentUser.id).sort((a, b) => ensureDate(b.createdAt).getTime() - ensureDate(a.createdAt).getTime());
   const wishlistProducts = products.filter(p => currentUser.wishlist?.includes(p.id));
 
   const getStatusColor = (status: OrderStatus) => {
@@ -68,6 +107,18 @@ export default function CustomerDashboard() {
       case 'preparing': return 'bg-purple-100 text-purple-800';
       case 'shipped': return 'bg-indigo-100 text-indigo-800';
       case 'delivered': return 'bg-green-100 text-green-800';
+      case 'payment_rejected': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getPaymentStatusColor = (status: PaymentStatus) => {
+    switch (status) {
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      case 'receipt_uploaded': return 'bg-blue-100 text-blue-800';
+      case 'under_review': return 'bg-purple-100 text-purple-800';
+      case 'approved': return 'bg-green-100 text-green-800';
+      case 'rejected': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -199,7 +250,7 @@ export default function CustomerDashboard() {
                         <div>
                           <h3 className="font-bold text-gray-900">{sub.productName}</h3>
                           <p className="text-sm text-gray-500 capitalize">{sub.frequency} delivery • Qty: {sub.quantity}</p>
-                          <p className="text-xs text-emerald-600 font-bold mt-1">Next Delivery: {new Date(sub.nextDelivery).toLocaleDateString()}</p>
+                          <p className="text-xs text-emerald-600 font-bold mt-1">Next Delivery: {ensureDate(sub.nextDelivery).toLocaleDateString()}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-6">
@@ -370,7 +421,7 @@ export default function CustomerDashboard() {
                           <div>
                             <p className="text-xs text-gray-500 mb-1 uppercase tracking-wider font-semibold">Order #{order.id.slice(0, 8).toUpperCase()}</p>
                             <p className="text-sm font-medium text-gray-900">
-                              Placed on {new Date(order.createdAt).toLocaleDateString()}
+                              Placed on {ensureDate(order.createdAt).toLocaleDateString()}
                             </p>
                           </div>
                           <div className="flex items-center gap-6">
@@ -446,14 +497,53 @@ export default function CustomerDashboard() {
                             )}
 
                             <div className="pt-4 border-t border-gray-200 mt-4">
-                              <p className="text-xs text-gray-400 mb-2 uppercase tracking-widest font-bold">Payment</p>
-                              <p className="text-sm text-gray-900 font-bold flex items-center gap-2">
-                                {order.paymentMethod === 'card' ? (
-                                  <><CreditCard className="w-4 h-4 text-gray-400" /> Credit/Debit Card</>
-                                ) : (
-                                  <><Banknote className="w-4 h-4 text-green-600" /> Cash on Delivery</>
-                                )}
-                              </p>
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <p className="text-xs text-gray-400 mb-2 uppercase tracking-widest font-bold">Payment Status</p>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${getPaymentStatusColor(order.paymentStatus || 'pending')}`}>
+                                      {order.paymentStatus?.replace('_', ' ') || 'pending'}
+                                    </span>
+                                    <p className="text-xs text-gray-600 font-medium capitalize">
+                                      via {order.paymentMethod?.replace('_', ' ')}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-end gap-2">
+                                  {(order.paymentStatus === 'pending' || order.paymentStatus === 'rejected') && order.paymentMethod !== 'card' && (
+                                    <button 
+                                      onClick={() => setUploadingReceiptOrder(order)}
+                                      className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 transition-colors shadow-sm flex items-center gap-1.5"
+                                    >
+                                      <Upload className="w-3 h-3" />
+                                      {order.paymentStatus === 'rejected' ? 'Re-upload Receipt' : 'Upload Receipt'}
+                                    </button>
+                                  )}
+                                  <button 
+                                    onClick={() => {
+                                      setSelectedChatUserId(order.vendorId);
+                                      setActiveTab('messages');
+                                    }}
+                                    className="px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg text-xs font-bold hover:bg-gray-50 transition-colors shadow-sm flex items-center gap-1.5"
+                                  >
+                                    <MessageSquare className="w-3 h-3" />
+                                    Chat with Vendor
+                                  </button>
+                                </div>
+                              </div>
+                              
+                              {order.paymentStatus === 'rejected' && order.paymentReceipt?.rejectionReason && (
+                                <div className="mt-3 p-3 bg-red-50 border border-red-100 rounded-lg">
+                                  <p className="text-[10px] font-bold text-red-800 uppercase tracking-widest mb-1">Rejection Reason</p>
+                                  <p className="text-xs text-red-700">{order.paymentReceipt.rejectionReason}</p>
+                                </div>
+                              )}
+
+                              {order.paymentStatus === 'receipt_uploaded' && (
+                                <p className="text-[10px] text-blue-600 font-bold mt-2 flex items-center gap-1">
+                                  <Clock className="w-3 h-3" /> Receipt uploaded. Awaiting vendor review.
+                                </p>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -480,7 +570,7 @@ export default function CustomerDashboard() {
                                   <div className="pb-4">
                                     <p className="text-xs font-bold text-gray-900 capitalize">{update.status}</p>
                                     <p className="text-xs text-gray-500 mt-1">{update.description}</p>
-                                    <p className="text-[10px] text-gray-400 mt-1 font-bold">{new Date(update.timestamp).toLocaleString()}</p>
+                                    <p className="text-[10px] text-gray-400 mt-1 font-bold">{ensureDate(update.timestamp).toLocaleString()}</p>
                                   </div>
                                 </div>
                               ))}
@@ -657,11 +747,85 @@ export default function CustomerDashboard() {
                     </button>
                   </div>
                 </form>
+
+                {/* Change Password Section */}
+                <div className="mt-12 pt-12 border-t border-gray-100">
+                  <h3 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2">
+                    <Lock className="w-5 h-5 text-emerald-600" /> Change Password
+                  </h3>
+                  <p className="text-sm text-gray-500 mb-6">Update your password to keep your account secure.</p>
+
+                  {passwordSuccess && (
+                    <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm font-bold flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4" /> Password updated successfully!
+                    </div>
+                  )}
+
+                  {passwordError && (
+                    <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-bold flex items-center gap-2">
+                      <X className="w-4 h-4" /> {passwordError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handlePasswordChange} className="space-y-6 max-w-xl">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">New Password</label>
+                      <div className="relative">
+                        <input 
+                          required 
+                          type={showNewPassword ? "text" : "password"} 
+                          value={passwordData.newPassword} 
+                          onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })} 
+                          className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-green-500 focus:bg-white outline-none transition-all font-medium pr-10" 
+                          placeholder="••••••••"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-green-600 transition-colors"
+                        >
+                          {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Confirm New Password</label>
+                      <div className="relative">
+                        <input 
+                          required 
+                          type={showConfirmPassword ? "text" : "password"} 
+                          value={passwordData.confirmPassword} 
+                          onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })} 
+                          className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-green-500 focus:bg-white outline-none transition-all font-medium pr-10" 
+                          placeholder="••••••••"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-green-600 transition-colors"
+                        >
+                          {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="pt-2">
+                      <button type="submit" className="bg-gray-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-black transition-all shadow-lg shadow-gray-200">
+                        Update Password
+                      </button>
+                    </div>
+                  </form>
+                </div>
               </div>
             </div>
           )}
         </div>
       </div>
+      {uploadingReceiptOrder && (
+        <PaymentReceiptUpload 
+          order={uploadingReceiptOrder} 
+          onClose={() => setUploadingReceiptOrder(null)} 
+        />
+      )}
     </div>
   );
 }

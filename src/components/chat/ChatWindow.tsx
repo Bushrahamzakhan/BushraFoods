@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { Send, X, User as UserIcon, Store } from 'lucide-react';
 import { ChatConversation } from '../../types';
+import { ensureDate } from '../../lib/utils';
 
 interface ChatWindowProps {
   otherUserId: string;
@@ -13,14 +14,14 @@ export default function ChatWindow({ otherUserId, onClose }: ChatWindowProps) {
   const [message, setMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  const conversation = conversations.find(c => c.otherUser.id === otherUserId);
-  const otherUser = conversation?.otherUser || vendors.find(v => v.id === otherUserId);
+  const conversation = conversations.find(c => c.otherUserId === otherUserId);
+  const otherUser = vendors.find(v => v.id === otherUserId);
+  const otherUserName = conversation?.otherUserName || otherUser?.storeName || otherUser?.name || 'Chat';
 
   useEffect(() => {
-    fetchMessages(otherUserId);
-    const interval = setInterval(() => fetchMessages(otherUserId), 10000); // Polling as fallback
+    const unsubscribe = fetchMessages(otherUserId);
     return () => {
-      clearInterval(interval);
+      unsubscribe();
       setActiveChatUserId(null);
     };
   }, [otherUserId]);
@@ -46,7 +47,7 @@ export default function ChatWindow({ otherUserId, onClose }: ChatWindowProps) {
           </div>
           <div>
             <h3 className="font-bold text-sm leading-tight">
-              {otherUser?.storeName || otherUser?.name || 'Chat'}
+              {otherUserName}
             </h3>
             <p className="text-[10px] text-green-100 uppercase tracking-widest font-bold">Online</p>
           </div>
@@ -71,7 +72,7 @@ export default function ChatWindow({ otherUserId, onClose }: ChatWindowProps) {
               }`}>
                 <p>{msg.content}</p>
                 <p className={`text-[10px] mt-1 ${isMe ? 'text-green-100' : 'text-gray-400'}`}>
-                  {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {ensureDate(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </p>
               </div>
             </div>

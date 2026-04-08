@@ -1,20 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { Store, User as UserIcon, ShieldCheck, Key } from 'lucide-react';
-import { User, Role } from '../types';
+import { Store, User as UserIcon, ShieldCheck, Key, Eye, EyeOff } from 'lucide-react';
+import { User, UserRole } from '../types';
 
 export default function Login() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useAppContext();
+  const { login, signup, loginWithGoogle, resetPassword, currentUser } = useAppContext();
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isForgotPasswordMode, setIsForgotPasswordMode] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
   
   const isSignup = searchParams.get('mode') === 'signup';
-  const defaultRole = (searchParams.get('role') as Role) || 'customer';
+  const defaultRole = (searchParams.get('role') as UserRole) || 'customer';
 
   const [isLoginMode, setIsLoginMode] = useState(!isSignup);
-  const [role, setRole] = useState<Role>(defaultRole);
+  const [role, setRole] = useState<UserRole>(defaultRole);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -26,6 +29,28 @@ export default function Login() {
 
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showAdminSecret, setShowAdminSecret] = useState(false);
+
+  useEffect(() => {
+    if (isAuthenticating && currentUser) {
+      setIsAuthenticating(false);
+      const redirect = searchParams.get('redirect');
+      const from = (location.state as any)?.from;
+      
+      if (redirect) {
+        navigate(redirect);
+      } else if (from) {
+        navigate(from.pathname, { state: from.state });
+      } else {
+        // Redirect based on role
+        if (currentUser.role === 'admin' || currentUser.email === 'bushraanwar854@gmail.com') navigate('/admin');
+        else if (currentUser.role === 'vendor') navigate('/vendor');
+        else if (currentUser.role === 'investor') navigate('/investor');
+        else navigate('/customer');
+      }
+    }
+  }, [currentUser, isAuthenticating, navigate, searchParams, location]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -38,78 +63,65 @@ export default function Login() {
     setIsLoading(true);
     
     try {
-      if (isLoginMode) {
-        const res = await fetch('/api/account/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: formData.email, password: formData.password })
-        });
-        
-        const contentType = res.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          const text = await res.text();
-          console.error("Non-JSON response from login:", text.slice(0, 200));
-          throw new Error("Server returned an invalid response. Please try again later.");
-        }
+      if (isForgotPasswordMode) {
+        await resetPassword(formData.email);
+        setResetSent(true);
+        return;
+      }
 
-        const data = await res.json();
-        if (res.ok) {
-          login(data.user, data.token);
-          const redirect = searchParams.get('redirect');
-          const from = (location.state as any)?.from;
-          
-          if (redirect) {
-            navigate(redirect);
-          } else if (from) {
-            navigate(from.pathname, { state: from.state });
-          } else {
-            navigate(data.user.role === 'vendor' ? '/vendor' : '/');
-          }
-        } else {
-          setError(data.error || "Invalid credentials.");
-        }
+      if (isLoginMode) {
+        await login(formData.email, formData.password);
       } else {
         // Signup mode
-        const res = await fetch('/api/account/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: formData.name,
-            email: formData.email,
-            password: formData.password,
-            role: role,
-            storeName: role === 'vendor' ? (formData.storeName || `${formData.name}'s Store`) : undefined,
-            accessKey: role === 'admin' ? formData.adminSecret : undefined
-          })
+        if (role === 'admin' && formData.adminSecret !== 'HALAL_ADMIN_2026') {
+          throw new Error("Invalid admin secret key.");
+        }
+
+        await signup(formData.email, formData.password, {
+          name: formData.name,
+          role: role,
+          storeName: role === 'vendor' ? (formData.storeName || `${formData.name}'s Store`) : undefined,
         });
-
-        const contentType = res.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          const text = await res.text();
-          console.error("Non-JSON response from register:", text.slice(0, 200));
-          throw new Error("Server returned an invalid response. Please try again later.");
-        }
-
-        const data = await res.json();
-        if (res.ok) {
-          login(data.user, data.token);
-          const redirect = searchParams.get('redirect');
-          const from = (location.state as any)?.from;
-
-          if (redirect) {
-            navigate(redirect);
-          } else if (from) {
-            navigate(from.pathname, { state: from.state });
-          } else {
-            navigate(data.user.role === 'vendor' ? '/vendor' : '/');
-          }
-        } else {
-          setError(data.error || "An error occurred during signup.");
-        }
       }
+
+      setIsAuthenticating(true);
     } catch (err: any) {
       console.error("Auth error:", err);
-      setError(err.message || "An error occurred during authentication.");
+      if (err.code === 'auth/email-already-in-use') {
+        setError("This email is already registered. Please sign in instead.");
+      } else if (err.code === 'auth/invalid-credential') {
+        setError("Invalid email or password. Please try again.");
+      } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setError("Invalid email or password. Please try again.");
+      } else if (err.code === 'auth/too-many-requests') {
+        setError("Too many failed login attempts. Please try again later.");
+      } else {
+        setError(err.message || "An error occurred during authentication.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError(null);
+    setIsLoading(true);
+    try {
+      await loginWithGoogle();
+      setIsAuthenticating(true);
+    } catch (err: any) {
+      console.error("Google Auth error:", err);
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError("The sign-in popup was closed before completion. Please try again.");
+      } else if (err.code === 'auth/cancelled-popup-request') {
+        setError("Only one sign-in popup can be open at a time.");
+      } else if (err.code === 'auth/popup-blocked') {
+        setError("Sign-in popup was blocked by your browser. Please allow popups for this site.");
+      } else if (err.code === 'auth/invalid-credential') {
+        setError("Invalid credentials. Please try again.");
+      } else {
+        setError(err.message || "An error occurred during Google authentication.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -121,10 +133,12 @@ export default function Login() {
         <div className="text-center mb-8">
           <Store className="w-12 h-12 text-green-600 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-gray-900">
-            Welcome to Halal Market
+            {isForgotPasswordMode ? 'Reset Password' : 'Welcome to Halal Market'}
           </h1>
           <p className="text-gray-500 mt-2">
-            Sign in or create an account to continue
+            {isForgotPasswordMode 
+              ? 'Enter your email to receive a reset link' 
+              : 'Sign in or create an account to continue'}
           </p>
         </div>
 
@@ -134,9 +148,30 @@ export default function Login() {
           </div>
         )}
 
+        {resetSent ? (
+          <div className="text-center py-8">
+            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <ShieldCheck className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Check your email</h2>
+            <p className="text-gray-600 mb-6">
+              We've sent a password reset link to <span className="font-bold">{formData.email}</span>.
+            </p>
+            <button
+              onClick={() => {
+                setResetSent(false);
+                setIsForgotPasswordMode(false);
+                setIsLoginMode(true);
+              }}
+              className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold hover:bg-emerald-700 transition-colors"
+            >
+              Back to Sign In
+            </button>
+          </div>
+        ) : (
           <div className="space-y-4">
             {/* Role Selection (Only for Signup) */}
-            {!isLoginMode && (
+            {!isLoginMode && !isForgotPasswordMode && (
               <div className="flex gap-2 mb-6">
                 <button
                   type="button"
@@ -217,15 +252,24 @@ export default function Login() {
                   <p className="text-xs text-emerald-600 mb-3">
                     To register as an administrator, please enter the platform's secret admin key.
                   </p>
-                  <input 
-                    required 
-                    type="password" 
-                    name="adminSecret" 
-                    value={formData.adminSecret} 
-                    onChange={handleInputChange} 
-                    className="w-full px-4 py-2 border border-emerald-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white" 
-                    placeholder="Enter Admin Secret Key"
-                  />
+                  <div className="relative">
+                    <input 
+                      required 
+                      type={showAdminSecret ? "text" : "password"} 
+                      name="adminSecret" 
+                      value={formData.adminSecret} 
+                      onChange={handleInputChange} 
+                      className="w-full px-4 py-2 border border-emerald-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white pr-10" 
+                      placeholder="Enter Admin Secret Key"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminSecret(!showAdminSecret)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-emerald-600 transition-colors"
+                    >
+                      {showAdminSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -242,40 +286,96 @@ export default function Login() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                <input 
-                  required 
-                  type="password" 
-                  name="password" 
-                  value={formData.password} 
-                  onChange={handleInputChange} 
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent" 
-                  placeholder="••••••••"
-                />
-              </div>
+              {!isForgotPasswordMode && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                  <div className="relative">
+                    <input 
+                      required 
+                      type={showPassword ? "text" : "password"} 
+                      name="password" 
+                      value={formData.password} 
+                      onChange={handleInputChange} 
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent pr-10" 
+                      placeholder="••••••••"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-green-600 transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isLoginMode && !isForgotPasswordMode && (
+                <div className="text-right">
+                  <button
+                    type="button"
+                    onClick={() => setIsForgotPasswordMode(true)}
+                    className="text-sm text-emerald-600 hover:text-emerald-700 font-medium"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+              )}
 
               <button 
                 type="submit" 
                 disabled={isLoading}
                 className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 transition-colors shadow-md mt-6 disabled:opacity-50"
               >
-                {isLoading ? 'Processing...' : (isLoginMode ? 'Sign In' : 'Create Account')}
+                {isLoading ? 'Processing...' : (isForgotPasswordMode ? 'Send Reset Link' : (isLoginMode ? 'Sign In' : 'Create Account'))}
               </button>
+
+              {!isForgotPasswordMode && (
+                <>
+                  <div className="relative my-6">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-gray-200"></div>
+                    </div>
+                    <div className="relative flex justify-center text-sm">
+                      <span className="px-2 bg-white text-gray-500">Or continue with</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    disabled={isLoading}
+                    className="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 py-3 rounded-xl font-bold hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-50"
+                  >
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" referrerPolicy="no-referrer" />
+                    <span>Google</span>
+                  </button>
+                </>
+              )}
             </form>
 
             <div className="mt-6 text-center">
               <button 
-                onClick={() => setIsLoginMode(!isLoginMode)}
+                onClick={() => {
+                  if (isForgotPasswordMode) {
+                    setIsForgotPasswordMode(false);
+                    setIsLoginMode(true);
+                  } else {
+                    setIsLoginMode(!isLoginMode);
+                  }
+                }}
                 className="text-green-600 hover:underline text-sm font-medium"
               >
-                {isLoginMode 
-                  ? "Don't have an account? Sign up" 
-                  : "Already have an account? Sign in"}
+                {isForgotPasswordMode 
+                  ? "Back to Sign In"
+                  : (isLoginMode 
+                    ? "Don't have an account? Sign up" 
+                    : "Already have an account? Sign in")}
               </button>
             </div>
           </div>
-        </div>
+        )}
       </div>
+    </div>
   );
 }

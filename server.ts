@@ -16,224 +16,231 @@ const PORT = 3000;
 
 // Initialize Database
 const dbPath = process.env.DATABASE_PATH || path.join(process.cwd(), 'database.sqlite');
-const db = new Database(dbPath);
+let db: Database.Database;
+
+try {
+  db = new Database(dbPath);
+  console.log(`Database initialized at ${dbPath}`);
+} catch (error) {
+  console.error("Failed to initialize file-based database, falling back to in-memory:", error);
+  db = new Database(':memory:');
+}
 
 // Create tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    name TEXT,
-    email TEXT UNIQUE,
-    password TEXT,
-    role TEXT,
-    status TEXT DEFAULT 'active',
-    storeName TEXT,
-    storeDescription TEXT,
-    profileImage TEXT,
-    coverImage TEXT,
-    lastShippingDetails TEXT,
-    wishlist TEXT DEFAULT '[]',
-    createdAt TEXT
-  );
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      email TEXT UNIQUE,
+      password TEXT,
+      role TEXT,
+      status TEXT DEFAULT 'active',
+      storeName TEXT,
+      storeDescription TEXT,
+      profileImage TEXT,
+      coverImage TEXT,
+      lastShippingDetails TEXT,
+      wishlist TEXT DEFAULT '[]',
+      createdAt TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS products (
-    id TEXT PRIMARY KEY,
-    vendorId TEXT,
-    vendorName TEXT,
-    name TEXT,
-    description TEXT,
-    price REAL,
-    currency TEXT DEFAULT 'USD',
-    category TEXT,
-    imageUrl TEXT,
-    stock INTEGER,
-    tags TEXT,
-    isHalalCertified INTEGER,
-    availableCountries TEXT,
-    availableCities TEXT,
-    variationTypes TEXT,
-    variationCombinations TEXT,
-    originCountry TEXT,
-    freshness TEXT,
-    groupPrice REAL,
-    targetMembers INTEGER,
-    availabilityScope TEXT DEFAULT 'global',
-    availabilityDescription TEXT
-  );
+    CREATE TABLE IF NOT EXISTS products (
+      id TEXT PRIMARY KEY,
+      vendorId TEXT,
+      vendorName TEXT,
+      name TEXT,
+      description TEXT,
+      price REAL,
+      currency TEXT DEFAULT 'USD',
+      category TEXT,
+      imageUrl TEXT,
+      stock INTEGER,
+      tags TEXT,
+      isHalalCertified INTEGER,
+      availableCountries TEXT,
+      availableCities TEXT,
+      variationTypes TEXT,
+      variationCombinations TEXT,
+      originCountry TEXT,
+      freshness TEXT,
+      groupPrice REAL,
+      targetMembers INTEGER,
+      availabilityScope TEXT DEFAULT 'global',
+      availabilityDescription TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS subscriptions (
-    id TEXT PRIMARY KEY,
-    customerId TEXT,
-    productId TEXT,
-    productName TEXT,
-    vendorId TEXT,
-    vendorName TEXT,
-    frequency TEXT, -- 'daily', 'weekly', 'monthly'
-    quantity INTEGER,
-    price REAL,
-    currency TEXT,
-    status TEXT DEFAULT 'active', -- 'active', 'paused', 'cancelled'
-    nextDelivery TEXT,
-    createdAt TEXT
-  );
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id TEXT PRIMARY KEY,
+      customerId TEXT,
+      productId TEXT,
+      productName TEXT,
+      vendorId TEXT,
+      vendorName TEXT,
+      frequency TEXT, -- 'daily', 'weekly', 'monthly'
+      quantity INTEGER,
+      price REAL,
+      currency TEXT,
+      status TEXT DEFAULT 'active', -- 'active', 'paused', 'cancelled'
+      nextDelivery TEXT,
+      createdAt TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS group_purchases (
-    id TEXT PRIMARY KEY,
-    productId TEXT,
-    productName TEXT,
-    vendorId TEXT,
-    vendorName TEXT,
-    targetMembers INTEGER DEFAULT 5,
-    currentMembers INTEGER DEFAULT 0,
-    price REAL,
-    currency TEXT,
-    expiresAt TEXT,
-    status TEXT DEFAULT 'open', -- 'open', 'completed', 'expired'
-    createdAt TEXT
-  );
+    CREATE TABLE IF NOT EXISTS group_purchases (
+      id TEXT PRIMARY KEY,
+      productId TEXT,
+      productName TEXT,
+      vendorId TEXT,
+      vendorName TEXT,
+      targetMembers INTEGER DEFAULT 5,
+      currentMembers INTEGER DEFAULT 0,
+      price REAL,
+      currency TEXT,
+      expiresAt TEXT,
+      status TEXT DEFAULT 'open', -- 'open', 'completed', 'expired'
+      createdAt TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS group_members (
-    id TEXT PRIMARY KEY,
-    groupPurchaseId TEXT,
-    customerId TEXT,
-    customerName TEXT,
-    customerProfileImage TEXT,
-    joinedAt TEXT
-  );
+    CREATE TABLE IF NOT EXISTS group_members (
+      id TEXT PRIMARY KEY,
+      groupPurchaseId TEXT,
+      customerId TEXT,
+      customerName TEXT,
+      customerProfileImage TEXT,
+      joinedAt TEXT
+    );
 
-  -- Migration: Add currency column if it doesn't exist
-  -- Note: SQLite doesn't support 'IF NOT EXISTS' for ADD COLUMN directly in a simple way without a PRAGMA check,
-  -- but we can try to add it and catch the error or use a more robust check.
-  -- For this environment, we'll use a try-catch block in the JS code instead of raw SQL for the migration.
+    CREATE TABLE IF NOT EXISTS orders (
+      id TEXT PRIMARY KEY,
+      customerId TEXT,
+      customerName TEXT,
+      vendorId TEXT,
+      vendorName TEXT,
+      status TEXT,
+      totalAmount REAL,
+      createdAt TEXT,
+      shippingDetails TEXT,
+      paymentMethod TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS orders (
-    id TEXT PRIMARY KEY,
-    customerId TEXT,
-    customerName TEXT,
-    vendorId TEXT,
-    vendorName TEXT,
-    status TEXT,
-    totalAmount REAL,
-    createdAt TEXT,
-    shippingDetails TEXT,
-    paymentMethod TEXT
-  );
+    CREATE TABLE IF NOT EXISTS notifications (
+      id TEXT PRIMARY KEY,
+      userId TEXT,
+      title TEXT,
+      message TEXT,
+      type TEXT,
+      orderId TEXT,
+      isRead INTEGER DEFAULT 0,
+      createdAt TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS notifications (
-    id TEXT PRIMARY KEY,
-    userId TEXT,
-    title TEXT,
-    message TEXT,
-    type TEXT,
-    orderId TEXT,
-    isRead INTEGER DEFAULT 0,
-    createdAt TEXT
-  );
+    CREATE TABLE IF NOT EXISTS order_items (
+      id TEXT PRIMARY KEY,
+      orderId TEXT,
+      productId TEXT,
+      productName TEXT,
+      price REAL,
+      currency TEXT DEFAULT 'USD',
+      quantity INTEGER,
+      selectedVariations TEXT,
+      imageUrl TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS order_items (
-    id TEXT PRIMARY KEY,
-    orderId TEXT,
-    productId TEXT,
-    productName TEXT,
-    price REAL,
-    currency TEXT DEFAULT 'USD',
-    quantity INTEGER,
-    selectedVariations TEXT,
-    imageUrl TEXT
-  );
+    CREATE TABLE IF NOT EXISTS order_history (
+      id TEXT PRIMARY KEY,
+      orderId TEXT,
+      status TEXT,
+      description TEXT,
+      timestamp TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS order_history (
-    id TEXT PRIMARY KEY,
-    orderId TEXT,
-    status TEXT,
-    description TEXT,
-    timestamp TEXT
-  );
+    CREATE TABLE IF NOT EXISTS investment_opportunities (
+      id TEXT PRIMARY KEY,
+      productId TEXT,
+      productName TEXT,
+      vendorId TEXT,
+      fundingGoal REAL,
+      currentFunding REAL DEFAULT 0,
+      totalUnits INTEGER,
+      profitSharingPct REAL,
+      riskLevel TEXT DEFAULT 'medium',
+      status TEXT DEFAULT 'active',
+      createdAt TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS investment_opportunities (
-    id TEXT PRIMARY KEY,
-    productId TEXT,
-    productName TEXT,
-    vendorId TEXT,
-    fundingGoal REAL,
-    currentFunding REAL DEFAULT 0,
-    totalUnits INTEGER,
-    profitSharingPct REAL,
-    riskLevel TEXT DEFAULT 'medium',
-    status TEXT DEFAULT 'active',
-    createdAt TEXT
-  );
+    CREATE TABLE IF NOT EXISTS investment_tiers (
+      id TEXT PRIMARY KEY,
+      opportunityId TEXT,
+      name TEXT,
+      amount REAL,
+      returnPct REAL,
+      estimatedEarnings REAL
+    );
 
-  CREATE TABLE IF NOT EXISTS investment_tiers (
-    id TEXT PRIMARY KEY,
-    opportunityId TEXT,
-    name TEXT,
-    amount REAL,
-    returnPct REAL,
-    estimatedEarnings REAL
-  );
+    CREATE TABLE IF NOT EXISTS investments (
+      id TEXT PRIMARY KEY,
+      opportunityId TEXT,
+      productId TEXT,
+      productName TEXT,
+      investorId TEXT,
+      tierId TEXT,
+      tierName TEXT,
+      amount REAL,
+      expectedReturnPct REAL,
+      earnedSoFar REAL DEFAULT 0,
+      status TEXT DEFAULT 'active',
+      createdAt TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS investments (
-    id TEXT PRIMARY KEY,
-    opportunityId TEXT,
-    productId TEXT,
-    productName TEXT,
-    investorId TEXT,
-    tierId TEXT,
-    tierName TEXT,
-    amount REAL,
-    expectedReturnPct REAL,
-    earnedSoFar REAL DEFAULT 0,
-    status TEXT DEFAULT 'active',
-    createdAt TEXT
-  );
+    CREATE TABLE IF NOT EXISTS investor_wallets (
+      userId TEXT PRIMARY KEY,
+      balance REAL DEFAULT 0,
+      totalEarned REAL DEFAULT 0,
+      updatedAt TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS investor_wallets (
-    userId TEXT PRIMARY KEY,
-    balance REAL DEFAULT 0,
-    totalEarned REAL DEFAULT 0,
-    updatedAt TEXT
-  );
+    CREATE TABLE IF NOT EXISTS wallet_transactions (
+      id TEXT PRIMARY KEY,
+      userId TEXT,
+      amount REAL,
+      type TEXT, -- 'investment', 'earning', 'withdrawal', 'deposit'
+      description TEXT,
+      createdAt TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS wallet_transactions (
-    id TEXT PRIMARY KEY,
-    userId TEXT,
-    amount REAL,
-    type TEXT, -- 'investment', 'earning', 'withdrawal', 'deposit'
-    description TEXT,
-    createdAt TEXT
-  );
+    CREATE TABLE IF NOT EXISTS product_sales_stats (
+      productId TEXT,
+      month TEXT, -- 'YYYY-MM'
+      unitsSold INTEGER DEFAULT 0,
+      revenue REAL DEFAULT 0,
+      PRIMARY KEY (productId, month)
+    );
 
-  CREATE TABLE IF NOT EXISTS product_sales_stats (
-    productId TEXT,
-    month TEXT, -- 'YYYY-MM'
-    unitsSold INTEGER DEFAULT 0,
-    revenue REAL DEFAULT 0,
-    PRIMARY KEY (productId, month)
-  );
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      senderId TEXT,
+      receiverId TEXT,
+      content TEXT,
+      isRead INTEGER DEFAULT 0,
+      createdAt TEXT
+    );
 
-  CREATE TABLE IF NOT EXISTS messages (
-    id TEXT PRIMARY KEY,
-    senderId TEXT,
-    receiverId TEXT,
-    content TEXT,
-    isRead INTEGER DEFAULT 0,
-    createdAt TEXT
-  );
-
-  CREATE TABLE IF NOT EXISTS reviews (
-    id TEXT PRIMARY KEY,
-    userId TEXT,
-    userName TEXT,
-    userProfileImage TEXT,
-    productId TEXT,
-    vendorId TEXT,
-    rating INTEGER,
-    comment TEXT,
-    isVerifiedPurchase INTEGER DEFAULT 0,
-    createdAt TEXT
-  );
-`);
+    CREATE TABLE IF NOT EXISTS reviews (
+      id TEXT PRIMARY KEY,
+      userId TEXT,
+      userName TEXT,
+      userProfileImage TEXT,
+      productId TEXT,
+      vendorId TEXT,
+      rating INTEGER,
+      comment TEXT,
+      isVerifiedPurchase INTEGER DEFAULT 0,
+      createdAt TEXT
+    );
+  `);
+} catch (error) {
+  console.error("Failed to create tables:", error);
+}
 
 // Migration: Ensure all required columns exist in the tables
 try {
@@ -307,7 +314,10 @@ async function startServer() {
 
   app.use(cors());
   app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    // Only log API requests to avoid cluttering logs with static asset requests
+    if (req.url.startsWith('/api/')) {
+      console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    }
     next();
   });
   app.use(express.json({ limit: '10mb' }));
@@ -321,10 +331,15 @@ async function startServer() {
     next();
   });
 
-  // Health check for hosting platforms
+  // Health check and ping routes
+  app.get('/ping', (req, res) => res.send('pong'));
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    res.json({ status: 'ok', timestamp: new Date().toISOString(), env: process.env.NODE_ENV });
   });
+
+  // Redirect common branding paths to root
+  app.get('/halalmarketonline', (req, res) => res.redirect('/'));
+  app.get('/halal-market', (req, res) => res.redirect('/'));
 
   // Middleware to authenticate JWT
   const authenticateToken = (req: any, res: any, next: any) => {
@@ -1471,15 +1486,19 @@ async function startServer() {
     });
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  // Vite middleware or static serving
+  const distPath = path.join(process.cwd(), 'dist');
+  const hasDist = fs.existsSync(distPath) && fs.existsSync(path.join(distPath, 'index.html'));
+
+  if (process.env.NODE_ENV !== "production" || !hasDist) {
+    console.log(`Serving using Vite middleware (NODE_ENV=${process.env.NODE_ENV}, hasDist=${hasDist})`);
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    console.log(`Serving static files from ${distPath}`);
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));

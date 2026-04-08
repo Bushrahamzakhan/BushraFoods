@@ -4,10 +4,10 @@ import { useAppContext } from '../context/AppContext';
 import { Trash2, ArrowRight, ShoppingBag, Store } from 'lucide-react';
 
 export default function Cart() {
-  const { cart, removeFromCart, addToCart, formatPrice } = useAppContext();
+  const { cart, removeFromCart, addToCart, formatPrice, getCartTotal } = useAppContext();
   const navigate = useNavigate();
 
-  const totalAmount = cart.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+  const totalAmount = getCartTotal();
 
   if (cart.length === 0) {
     return (
@@ -101,7 +101,7 @@ export default function Cart() {
             <div className="space-y-4 mb-6">
               <div className="flex justify-between text-gray-600">
                 <span>Subtotal ({cart.reduce((sum, item) => sum + item.quantity, 0)} items)</span>
-                <span>{formatPrice(totalAmount, cart[0]?.product?.currency)}</span>
+                <span>{formatPrice(totalAmount)}</span>
               </div>
               <div className="flex justify-between text-gray-600">
                 <span>Shipping</span>
@@ -109,7 +109,7 @@ export default function Cart() {
               </div>
               <div className="border-t border-gray-100 pt-4 flex justify-between items-center">
                 <span className="text-lg font-bold text-gray-900">Estimated Total</span>
-                <span className="text-2xl font-extrabold text-green-700">{formatPrice(totalAmount, cart[0]?.product?.currency)}</span>
+                <span className="text-2xl font-extrabold text-green-700">{formatPrice(totalAmount)}</span>
               </div>
             </div>
 
