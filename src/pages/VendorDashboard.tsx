@@ -9,13 +9,14 @@ import {
   ChevronDown, ChevronUp, Image as ImageIcon, Settings, Award, Users,
   ChevronRight, Eye, EyeOff, Lock, CreditCard
 } from 'lucide-react';
-import { Product, OrderStatus, VariationType, VariationCombination, SUPPORTED_CURRENCIES, VendorPaymentMethod, PaymentMethodType } from '../types';
+import { Product, OrderStatus, PaymentStatus, VariationType, VariationCombination, SUPPORTED_CURRENCIES, VendorPaymentMethod, PaymentMethodType } from '../types';
 import { COUNTRIES, FRESHNESS_OPTIONS, CATEGORIES } from '../constants';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import ChatList from '../components/chat/ChatList';
 import ChatWindow from '../components/chat/ChatWindow';
+import ImageUploadField from '../components/ImageUploadField';
 
 export default function VendorDashboard() {
   const { 
@@ -59,6 +60,9 @@ export default function VendorDashboard() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deletingProductId, setDeletingProductId] = useState<string | null>(null);
   const [statusModal, setStatusModal] = useState<{ orderId: string, status: OrderStatus, description: string } | null>(null);
+  const [paymentRejectionModal, setPaymentRejectionModal] = useState<{ orderId: string } | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [viewingReceiptUrl, setViewingReceiptUrl] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -110,6 +114,17 @@ export default function VendorDashboard() {
     instructions: '',
     isActive: true
   });
+
+  const getPaymentStatusDisplay = (status: PaymentStatus) => {
+    switch (status) {
+      case 'pending': return 'Pending';
+      case 'receipt_uploaded': return 'Receipt Uploaded';
+      case 'under_review': return 'Under Review';
+      case 'approved': return 'Payment Received';
+      case 'rejected': return 'Payment Not Received';
+      default: return (status as string).replace('_', ' ');
+    }
+  };
 
   const handlePaymentMethodSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -315,14 +330,45 @@ export default function VendorDashboard() {
         </div>
 
         {/* Low Stock Alerts */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-900 mb-6">Inventory Alerts</h3>
+        <div className="space-y-8">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+              <CreditCard className="w-5 h-5 text-blue-600" />
+              Pending Payments
+            </h3>
+            <div className="space-y-4">
+              {myOrders.filter(o => o.paymentStatus === 'receipt_uploaded').length > 0 ? (
+                myOrders.filter(o => o.paymentStatus === 'receipt_uploaded').map(order => (
+                  <div key={order.id} className="p-4 bg-blue-50 rounded-xl border border-blue-100 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-gray-900">Order #{order.id.slice(0, 8).toUpperCase()}</p>
+                      <p className="text-xs text-gray-500">{order.customerName} • {formatPrice(order.totalAmount, order.currency)}</p>
+                    </div>
+                    <button 
+                      onClick={() => { setActiveTab('orders'); /* Logic to open this specific order details */ }}
+                      className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      Review Receipt
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8">
+                  <CheckCircle className="w-12 h-12 text-blue-200 mx-auto mb-3" />
+                  <p className="text-sm text-gray-500 italic">No pending payment approvals.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <h3 className="text-lg font-bold text-gray-900 mb-6">Inventory Alerts</h3>
           <div className="space-y-4">
             {lowStockProducts.length > 0 ? (
               lowStockProducts.map(product => (
                 <div key={product.id} className="flex items-center justify-between p-3 bg-red-50 rounded-xl border border-red-100">
                   <div className="flex items-center gap-3">
-                    <img src={product.imageUrl} alt={product.name} className="w-10 h-10 rounded-lg object-cover" referrerPolicy="no-referrer" />
+                    <img src={product.imageUrl} alt={product.name} className="w-10 h-10 rounded-lg object-cover" referrerPolicy="no-referrer" loading="lazy" />
                     <div>
                       <p className="text-sm font-medium text-gray-900 line-clamp-1">{product.name}</p>
                       <p className="text-xs text-red-600 font-bold">{product.stock} left in stock</p>
@@ -345,8 +391,9 @@ export default function VendorDashboard() {
           </div>
         </div>
       </div>
+    </div>
 
-      {/* Recent Orders & Investments */}
+    {/* Recent Orders & Investments */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Recent Orders */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1301,9 +1348,14 @@ export default function VendorDashboard() {
                   <label className="text-sm font-medium text-gray-700">Availability/Delivery Description</label>
                   <input type="text" name="availabilityDescription" value={formData.availabilityDescription} onChange={handleInputChange} placeholder="e.g., Available in California only or Ships across UAE and Saudi Arabia" className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
                 </div>
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-medium text-gray-700">Image URL</label>
-                  <input type="url" name="imageUrl" value={formData.imageUrl} onChange={handleInputChange} placeholder="https://example.com/image.jpg" className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
+                <div className="md:col-span-2">
+                  <ImageUploadField
+                    label="Product Image"
+                    value={formData.imageUrl}
+                    onChange={(url) => setFormData({ ...formData, imageUrl: url })}
+                    folder="products"
+                    placeholder="https://example.com/product.jpg"
+                  />
                 </div>
 
                 {/* Group Purchase Configuration */}
@@ -1521,7 +1573,7 @@ export default function VendorDashboard() {
                     <tr key={product.id} className="hover:bg-gray-50 transition-colors">
                       <td className="p-4">
                         <div className="flex items-center gap-3">
-                          <img src={product.imageUrl} alt={product.name} className="w-12 h-12 rounded object-cover" referrerPolicy="no-referrer" />
+                          <img src={product.imageUrl} alt={product.name} className="w-12 h-12 rounded object-cover" referrerPolicy="no-referrer" loading="lazy" />
                           <div>
                             <p className="font-semibold text-gray-900">{product.name}</p>
                             <p className="text-xs text-gray-500 line-clamp-1 w-48">{product.description}</p>
@@ -1657,7 +1709,7 @@ export default function VendorDashboard() {
                             order.paymentStatus === 'approved' ? 'text-green-600' : 
                             order.paymentStatus === 'rejected' ? 'text-red-600' : 
                             'text-blue-600'
-                          }`}>{order.paymentStatus?.replace('_', ' ')}</span>
+                          }`}>{getPaymentStatusDisplay(order.paymentStatus || 'pending')}</span>
                         </p>
                       </div>
                     )}
@@ -1671,8 +1723,8 @@ export default function VendorDashboard() {
                           <img 
                             src={order.paymentReceipt.imageUrl} 
                             alt="Receipt" 
-                            className="w-full sm:w-32 h-32 object-cover rounded border border-blue-200 cursor-pointer hover:opacity-90"
-                            onClick={() => window.open(order.paymentReceipt?.imageUrl, '_blank')}
+                            className="w-full sm:w-32 h-32 object-cover rounded border border-blue-200 cursor-pointer hover:opacity-90 transition-opacity"
+                            onClick={() => setViewingReceiptUrl(order.paymentReceipt?.imageUrl || null)}
                           />
                           <div className="flex-grow space-y-3">
                             <p className="text-xs text-blue-700">
@@ -1697,8 +1749,8 @@ export default function VendorDashboard() {
                               </button>
                               <button 
                                 onClick={() => {
-                                  const reason = prompt('Enter rejection reason:');
-                                  if (reason) reviewPaymentReceipt(order.id, 'rejected', reason);
+                                  setPaymentRejectionModal({ orderId: order.id });
+                                  setRejectionReason('');
                                 }}
                                 className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-700"
                               >
@@ -1932,22 +1984,22 @@ export default function VendorDashboard() {
                 <textarea name="storeDescription" value={profileData.storeDescription} onChange={handleProfileChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg" rows={4} placeholder="Tell customers about your store and products..."></textarea>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Profile Image URL (Logo)</label>
-                <input type="url" name="profileImage" value={profileData.profileImage} onChange={handleProfileChange} placeholder="https://example.com/logo.jpg" className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
-                {profileData.profileImage && (
-                  <div className="mt-2">
-                    <img src={profileData.profileImage} alt="Profile Preview" className="w-16 h-16 rounded-full object-cover border border-gray-200" referrerPolicy="no-referrer" />
-                  </div>
-                )}
+                <ImageUploadField
+                  label="Profile Image (Logo)"
+                  value={profileData.profileImage}
+                  onChange={(url) => setProfileData({ ...profileData, profileImage: url })}
+                  folder="vendors/logos"
+                  placeholder="https://example.com/logo.jpg"
+                />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">Cover Image URL</label>
-                <input type="url" name="coverImage" value={profileData.coverImage} onChange={handleProfileChange} placeholder="https://example.com/cover.jpg" className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
-                {profileData.coverImage && (
-                  <div className="mt-2">
-                    <img src={profileData.coverImage} alt="Cover Preview" className="w-full h-32 object-cover rounded-lg border border-gray-200" referrerPolicy="no-referrer" />
-                  </div>
-                )}
+                <ImageUploadField
+                  label="Cover Image"
+                  value={profileData.coverImage}
+                  onChange={(url) => setProfileData({ ...profileData, coverImage: url })}
+                  folder="vendors/covers"
+                  placeholder="https://example.com/cover.jpg"
+                />
               </div>
               <button type="submit" className="bg-green-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-green-700 transition-colors">
                 Save Profile
@@ -2020,6 +2072,71 @@ export default function VendorDashboard() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receipt Image Lightbox */}
+      {viewingReceiptUrl && (
+        <div 
+          className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 cursor-zoom-out"
+          onClick={() => setViewingReceiptUrl(null)}
+        >
+          <button 
+            onClick={() => setViewingReceiptUrl(null)}
+            className="absolute top-6 right-6 text-white hover:text-gray-300 transition-colors"
+          >
+            <X className="w-8 h-8" />
+          </button>
+          <img 
+            src={viewingReceiptUrl} 
+            alt="Payment Receipt Full View" 
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+
+      {/* Payment Rejection Modal */}
+      {paymentRejectionModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-gray-900">Reject Payment</h3>
+              <button onClick={() => setPaymentRejectionModal(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Please provide a reason for rejecting this payment receipt. This will be shown to the customer.
+            </p>
+            <textarea
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="e.g., Transaction ID not found, Amount doesn't match, Receipt is blurry..."
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500 outline-none h-32 resize-none mb-6"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPaymentRejectionModal(null)}
+                className="flex-1 px-4 py-2 border border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!rejectionReason.trim()) return;
+                  await reviewPaymentReceipt(paymentRejectionModal.orderId, 'rejected', rejectionReason);
+                  setPaymentRejectionModal(null);
+                  setRejectionReason('');
+                  setSuccessMessage('Payment rejected and customer notified');
+                }}
+                disabled={!rejectionReason.trim()}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                Confirm Rejection
+              </button>
             </div>
           </div>
         </div>

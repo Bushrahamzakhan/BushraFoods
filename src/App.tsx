@@ -42,7 +42,7 @@ function AppRoutes() {
         <Route path="/product/:id" element={<Layout><ProductDetails /></Layout>} />
         <Route path="/cart" element={<Layout><Cart /></Layout>} />
         <Route path="/checkout" element={<Layout><Checkout /></Layout>} />
-        <Route path="/group-checkout" element={<Layout><GroupCheckout /></Layout>} />
+        <Route path="/group-checkout/:id" element={<Layout><GroupCheckout /></Layout>} />
         <Route path="/login" element={<Login />} />
         <Route path="/vendors" element={<Layout><VendorsList /></Layout>} />
         <Route path="/vendor/:id" element={<Layout><VendorShop /></Layout>} />

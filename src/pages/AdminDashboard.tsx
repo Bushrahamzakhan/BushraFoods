@@ -5,27 +5,35 @@ import {
   Users, Store, DollarSign, Clock, CheckCircle, XCircle, AlertCircle, 
   Package, ShoppingBag, Search, Filter, Trash2, Eye, ChevronRight, 
   TrendingUp, Activity, ShieldCheck, User as UserIcon, Award, BarChart3,
-  PieChart as PieChartIcon
+  PieChart as PieChartIcon, CreditCard, MessageSquare, X
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell
 } from 'recharts';
-import { OrderStatus } from '../types';
+import { OrderStatus, PaymentStatus } from '../types';
 import { ensureDate } from '../lib/utils';
+import ChatList from '../components/chat/ChatList';
+import ChatWindow from '../components/chat/ChatWindow';
 
-type AdminTab = 'overview' | 'vendors' | 'products' | 'orders' | 'customers' | 'investments' | 'reviews' | 'audit' | 'admins';
+type AdminTab = 'overview' | 'vendors' | 'products' | 'orders' | 'customers' | 'investments' | 'group-buys' | 'reviews' | 'audit' | 'admins' | 'payments' | 'messages' | 'vendor-applications';
 
 export default function AdminDashboard() {
   const { 
     currentUser, adminStats, adminVendors, adminProducts, adminOrders, adminCustomers, adminInvestments, adminReviews, auditLogs,
+    groupPurchases, fetchGroupPurchases,
     fetchAdminStats, fetchAdminVendors, fetchAdminProducts, fetchAdminOrders, fetchAdminCustomers, fetchAdminInvestments, fetchAdminReviews, fetchAuditLogs,
     updateVendorStatus, deleteUserAdmin, deleteProductAdmin, deleteReviewAdmin, updateOrderStatusAdmin, recalculateTopRated, formatPrice,
-    updateUserRole, updateUserStatus
+    updateUserRole, updateUserStatus, cancelGroupPurchaseAdmin,
+    vendorApplications, reviewVendorApplication
   } = useAppContext();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedChatUserId, setSelectedChatUserId] = useState<string | null>(null);
+  const [viewingReceiptUrl, setViewingReceiptUrl] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [rejectingAppId, setRejectingAppId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -49,6 +57,7 @@ export default function AdminDashboard() {
       fetchAdminInvestments();
       fetchAdminReviews();
       fetchAuditLogs();
+      fetchGroupPurchases();
     }
   }, [currentUser]);
 
@@ -111,6 +120,17 @@ export default function AdminDashboard() {
 
   const isSuperAdmin = currentUser?.email === 'bushraanwar854@gmail.com';
 
+  const getPaymentStatusDisplay = (status: PaymentStatus) => {
+    switch (status) {
+      case 'pending': return 'Pending';
+      case 'receipt_uploaded': return 'Receipt Uploaded';
+      case 'under_review': return 'Under Review';
+      case 'approved': return 'Payment Received';
+      case 'rejected': return 'Payment Not Received';
+      default: return (status as string).replace('_', ' ');
+    }
+  };
+
   const filteredAdmins = adminCustomers.filter(c => 
     c.role === 'admin' || c.role === 'moderator' || c.role === 'support'
   ).filter(a => 
@@ -132,6 +152,11 @@ export default function AdminDashboard() {
 
   const filteredOpportunities = adminInvestments.opportunities.filter(o => 
     (o.productName || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredGroupPurchases = groupPurchases.filter(g => 
+    (g.productName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (g.id || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -189,7 +214,7 @@ export default function AdminDashboard() {
         </div>
         
         <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
-          {(['overview', 'vendors', 'products', 'orders', 'customers', 'investments', 'reviews', 'audit', 'admins'] as AdminTab[]).map((tab) => {
+          {(['overview', 'vendor-applications', 'vendors', 'products', 'orders', 'customers', 'investments', 'group-buys', 'reviews', 'audit', 'admins'] as AdminTab[]).map((tab) => {
             if (tab === 'admins' && !isSuperAdmin) return null;
             return (
               <button
@@ -268,18 +293,18 @@ export default function AdminDashboard() {
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden group">
               <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:scale-110 transition-transform">
-                <Activity className="w-24 h-24" />
+                <Users className="w-24 h-24" />
               </div>
               <div className="flex items-center gap-4 mb-4">
                 <div className="p-3 bg-emerald-100 rounded-xl text-emerald-600">
-                  <Activity className="w-6 h-6" />
+                  <Users className="w-6 h-6" />
                 </div>
-                <span className="text-sm font-bold text-gray-500 uppercase tracking-wider">System Status</span>
+                <span className="text-sm font-bold text-gray-500 uppercase tracking-wider">Group Buys</span>
               </div>
-              <p className="text-3xl font-black text-emerald-600">Healthy</p>
-              <div className="mt-4 flex items-center gap-1 text-gray-500 text-xs font-bold">
-                <Clock className="w-3 h-3" />
-                <span>Uptime: 99.9%</span>
+              <p className="text-3xl font-black text-gray-900">{groupPurchases.filter(g => g.status === 'open').length}</p>
+              <div className="mt-4 flex items-center gap-1 text-emerald-600 text-xs font-bold">
+                <Activity className="w-3 h-3" />
+                <span>Active group campaigns</span>
               </div>
             </div>
           </div>
@@ -404,6 +429,17 @@ export default function AdminDashboard() {
               </h2>
               <div className="grid grid-cols-2 gap-4">
                 <button 
+                  onClick={() => setActiveTab('vendor-applications')}
+                  className="p-4 bg-gray-50 rounded-xl hover:bg-emerald-50 transition-colors text-left group relative"
+                >
+                  {vendorApplications.filter(a => a.status === 'pending').length > 0 && (
+                    <span className="absolute top-2 right-2 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                  )}
+                  <Store className="w-6 h-6 text-emerald-600 mb-2 group-hover:scale-110 transition-transform" />
+                  <p className="font-bold text-gray-900">Vendor Apps</p>
+                  <p className="text-xs text-gray-500">Review new vendor applications</p>
+                </button>
+                <button 
                   onClick={() => setActiveTab('vendors')}
                   className="p-4 bg-gray-50 rounded-xl hover:bg-emerald-50 transition-colors text-left group"
                 >
@@ -434,6 +470,25 @@ export default function AdminDashboard() {
                   <Users className="w-6 h-6 text-amber-600 mb-2 group-hover:scale-110 transition-transform" />
                   <p className="font-bold text-gray-900">User Support</p>
                   <p className="text-xs text-gray-500">Manage customer accounts</p>
+                </button>
+                <button 
+                  onClick={() => setActiveTab('payments')}
+                  className="p-4 bg-gray-50 rounded-xl hover:bg-red-50 transition-colors text-left group relative"
+                >
+                  {adminOrders.filter(o => o.paymentStatus === 'receipt_uploaded').length > 0 && (
+                    <span className="absolute top-2 right-2 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                  )}
+                  <CreditCard className="w-6 h-6 text-red-600 mb-2 group-hover:scale-110 transition-transform" />
+                  <p className="font-bold text-gray-900">Payment Oversight</p>
+                  <p className="text-xs text-gray-500">Review pending receipts & disputes</p>
+                </button>
+                <button 
+                  onClick={() => setActiveTab('messages')}
+                  className="p-4 bg-gray-50 rounded-xl hover:bg-emerald-50 transition-colors text-left group"
+                >
+                  <MessageSquare className="w-6 h-6 text-emerald-600 mb-2 group-hover:scale-110 transition-transform" />
+                  <p className="font-bold text-gray-900">Messages</p>
+                  <p className="text-xs text-gray-500">Chat with vendors & customers</p>
                 </button>
               </div>
             </div>
@@ -503,6 +558,74 @@ export default function AdminDashboard() {
           </div>
 
           <div className="overflow-x-auto">
+            {activeTab === 'vendor-applications' && (
+              <table className="w-full text-left">
+                <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                  <tr>
+                    <th className="px-6 py-4 font-bold">Business / Applicant</th>
+                    <th className="px-6 py-4 font-bold">Contact</th>
+                    <th className="px-6 py-4 font-bold">Status</th>
+                    <th className="px-6 py-4 font-bold">Applied On</th>
+                    <th className="px-6 py-4 font-bold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {vendorApplications.filter(app => 
+                    app.businessName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    app.userName.toLowerCase().includes(searchTerm.toLowerCase())
+                  ).map(app => (
+                    <tr key={app.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-gray-900">{app.businessName}</div>
+                        <div className="text-xs text-gray-500">{app.userName}</div>
+                        <div className="text-[10px] text-gray-400 mt-1 max-w-xs truncate">{app.businessDescription}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-gray-600">{app.userEmail}</div>
+                        <div className="text-xs text-gray-400">{app.phoneNumber}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                          app.status === 'approved' ? 'bg-emerald-100 text-emerald-700' :
+                          app.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                          'bg-red-100 text-red-700'
+                        }`}>
+                          {app.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {ensureDate(app.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        {app.status === 'pending' ? (
+                          <div className="flex justify-end gap-2">
+                            <button 
+                              onClick={() => reviewVendorApplication(app.id, 'approved')}
+                              className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg"
+                              title="Approve"
+                            >
+                              <CheckCircle className="w-5 h-5" />
+                            </button>
+                            <button 
+                              onClick={() => setRejectingAppId(app.id)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                              title="Reject"
+                            >
+                              <XCircle className="w-5 h-5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-400 italic">
+                            Reviewed on {app.reviewedAt ? ensureDate(app.reviewedAt).toLocaleDateString() : 'N/A'}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
             {activeTab === 'vendors' && (
               <table className="w-full text-left">
                 <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
@@ -564,6 +687,23 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end gap-2">
+                          <button 
+                            onClick={() => {
+                              const methods = vendor.paymentMethods?.filter(m => m.isActive) || [];
+                              setConfirmModal({
+                                isOpen: true,
+                                title: `${vendor.storeName || vendor.name} - Payment Methods`,
+                                message: methods.length > 0 
+                                  ? methods.map(m => `${m.name} (${m.type}): ${m.details}`).join('\n\n')
+                                  : 'No active payment methods configured.',
+                                onConfirm: () => setConfirmModal(prev => ({ ...prev, isOpen: false }))
+                              });
+                            }}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" 
+                            title="View Payment Methods"
+                          >
+                            <CreditCard className="w-5 h-5" />
+                          </button>
                           {vendor.status !== 'active' && (
                             <button onClick={() => updateVendorStatus(vendor.id, 'active')} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg" title="Approve">
                               <CheckCircle className="w-5 h-5" />
@@ -677,7 +817,7 @@ export default function AdminDashboard() {
                               setConfirmModal({
                                 isOpen: true,
                                 title: `Order Details #${order.id.slice(0, 8).toUpperCase()}`,
-                                message: `Payment Status: ${order.paymentStatus || 'N/A'}\nPayment Method: ${order.paymentMethod || 'N/A'}\nTotal: ${formatPrice(order.totalAmount, order.currency)}\n\n${order.paymentReceipt ? 'Receipt image is available for review.' : 'No receipt uploaded.'}`,
+                                message: `Payment Status: ${getPaymentStatusDisplay(order.paymentStatus || 'pending')}\nPayment Method: ${order.paymentMethod?.replace('_', ' ') || 'N/A'}\nTotal: ${formatPrice(order.totalAmount, order.currency)}\n\n${order.paymentReceipt ? 'Receipt image is available for review.' : 'No receipt uploaded.'}`,
                                 onConfirm: () => {
                                   if (order.paymentReceipt) {
                                     window.open(order.paymentReceipt.imageUrl, '_blank');
@@ -697,6 +837,85 @@ export default function AdminDashboard() {
                   ))}
                 </tbody>
               </table>
+            )}
+
+            {activeTab === 'payments' && (
+              <div className="p-6">
+                <div className="flex items-center gap-2 mb-6 text-amber-600">
+                  <AlertCircle className="w-5 h-5" />
+                  <p className="text-sm font-medium">Orders awaiting payment verification by vendors</p>
+                </div>
+                <table className="w-full text-left">
+                  <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                    <tr>
+                      <th className="px-6 py-4 font-bold">Order ID</th>
+                      <th className="px-6 py-4 font-bold">Vendor</th>
+                      <th className="px-6 py-4 font-bold">Customer</th>
+                      <th className="px-6 py-4 font-bold">Amount</th>
+                      <th className="px-6 py-4 font-bold">Receipt</th>
+                      <th className="px-6 py-4 font-bold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {adminOrders.filter(o => o.paymentStatus === 'receipt_uploaded').map(order => (
+                      <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 font-mono text-xs text-gray-500">#{order.id.slice(0, 8).toUpperCase()}</td>
+                        <td className="px-6 py-4 text-sm font-bold text-gray-900">{order.vendorName}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{order.customerName}</td>
+                        <td className="px-6 py-4 font-bold text-emerald-600">{formatPrice(order.totalAmount, order.currency)}</td>
+                        <td className="px-6 py-4">
+                          <button 
+                            onClick={() => setViewingReceiptUrl(order.paymentReceipt?.imageUrl || null)}
+                            className="text-blue-600 hover:underline text-xs font-bold flex items-center gap-1"
+                          >
+                            <Eye className="w-3 h-3" /> View Receipt
+                          </button>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <button 
+                            onClick={() => {
+                              setSelectedChatUserId(order.vendorId);
+                              setActiveTab('messages');
+                            }}
+                            className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg"
+                            title="Contact Vendor"
+                          >
+                            <MessageSquare className="w-5 h-5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {adminOrders.filter(o => o.paymentStatus === 'receipt_uploaded').length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-12 text-center text-gray-500 italic">
+                          No orders currently awaiting payment verification.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {activeTab === 'messages' && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[600px] p-6">
+                <div className="lg:col-span-1 overflow-y-auto">
+                  <ChatList onSelect={setSelectedChatUserId} activeUserId={selectedChatUserId || undefined} />
+                </div>
+                <div className="lg:col-span-2 h-full">
+                  {selectedChatUserId ? (
+                    <ChatWindow otherUserId={selectedChatUserId} onClose={() => setSelectedChatUserId(null)} />
+                  ) : (
+                    <div className="h-full bg-white rounded-2xl border border-gray-100 flex flex-col items-center justify-center text-center p-12">
+                      <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600 mb-4">
+                        <MessageSquare className="w-8 h-8" />
+                      </div>
+                      <h3 className="text-xl font-bold text-gray-900 mb-2">Select a conversation</h3>
+                      <p className="text-gray-500">Pick a user from the list to start chatting.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
 
             {activeTab === 'customers' && (
@@ -828,6 +1047,75 @@ export default function AdminDashboard() {
                         }`}>
                           {opp.status}
                         </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {activeTab === 'group-buys' && (
+              <table className="w-full text-left">
+                <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                  <tr>
+                    <th className="px-6 py-4 font-bold">Product</th>
+                    <th className="px-6 py-4 font-bold">Target</th>
+                    <th className="px-6 py-4 font-bold">Joined</th>
+                    <th className="px-6 py-4 font-bold">Progress</th>
+                    <th className="px-6 py-4 font-bold">Status</th>
+                    <th className="px-6 py-4 font-bold">Expires</th>
+                    <th className="px-6 py-4 font-bold text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredGroupPurchases.map(group => (
+                    <tr key={group.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-gray-900 text-sm">{group.productName}</div>
+                        <div className="text-xs text-gray-500">ID: {group.id.slice(0, 8)}</div>
+                      </td>
+                      <td className="px-6 py-4 font-bold text-gray-900">{group.targetMembers}</td>
+                      <td className="px-6 py-4 font-bold text-emerald-600">{group.currentMembers}</td>
+                      <td className="px-6 py-4">
+                        <div className="w-full bg-gray-100 rounded-full h-2 max-w-[100px]">
+                          <div 
+                            className="bg-emerald-600 h-2 rounded-full" 
+                            style={{ width: `${Math.min(100, (group.currentMembers / group.targetMembers) * 100)}%` }}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
+                          group.status === 'open' ? 'bg-emerald-100 text-emerald-700' : 
+                          group.status === 'completed' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {group.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">
+                        {ensureDate(group.expiresAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        {group.status === 'open' && (
+                          <button 
+                            onClick={() => {
+                              setConfirmModal({
+                                isOpen: true,
+                                title: 'Cancel Group Buy?',
+                                message: 'Are you sure you want to cancel this group buy? All participants will need to be refunded manually if not automated.',
+                                onConfirm: async () => {
+                                  await cancelGroupPurchaseAdmin(group.id);
+                                  showSuccess('Group buy cancelled.');
+                                  setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                }
+                              });
+                            }}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                            title="Cancel Group"
+                          >
+                            <XCircle className="w-5 h-5" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1032,6 +1320,69 @@ export default function AdminDashboard() {
                 <p className="text-sm">Try adjusting your search term or filters.</p>
               </div>
             ) : null}
+          </div>
+        </div>
+      )}
+      {/* Receipt Image Lightbox */}
+      {viewingReceiptUrl && (
+        <div 
+          className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 cursor-zoom-out"
+          onClick={() => setViewingReceiptUrl(null)}
+        >
+          <button 
+            onClick={() => setViewingReceiptUrl(null)}
+            className="absolute top-6 right-6 text-white hover:text-gray-300 transition-colors"
+          >
+            <X className="w-8 h-8" />
+          </button>
+          <img 
+            src={viewingReceiptUrl} 
+            alt="Payment Receipt Full View" 
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+
+      {rejectingAppId && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">Reject Vendor Application</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-bold text-gray-700 mb-1 block">Reason for Rejection</label>
+                <textarea 
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none transition-all resize-none"
+                  placeholder="Explain why the application is being rejected..."
+                  rows={4}
+                />
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => {
+                    setRejectingAppId(null);
+                    setRejectionReason('');
+                  }}
+                  className="flex-1 px-4 py-3 border border-gray-200 rounded-xl font-bold text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={async () => {
+                    if (!rejectionReason.trim()) return;
+                    await reviewVendorApplication(rejectingAppId, 'rejected', rejectionReason);
+                    setRejectingAppId(null);
+                    setRejectionReason('');
+                    showSuccess('Application rejected.');
+                  }}
+                  className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 shadow-lg shadow-red-100"
+                >
+                  Confirm Rejection
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

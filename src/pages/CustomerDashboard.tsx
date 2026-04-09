@@ -5,7 +5,7 @@ import {
   Package, Clock, CheckCircle, Truck, MapPin, 
   CreditCard, Banknote, User as UserIcon, Heart, 
   Settings, ShoppingBag, ChevronRight, Star, MessageSquare, X, Users,
-  Eye, EyeOff, Lock, Upload
+  Eye, EyeOff, Lock, Upload, Search, Filter, RefreshCw, Store, XCircle
 } from 'lucide-react';
 import { OrderStatus, PaymentStatus } from '../types';
 import { ensureDate } from '../lib/utils';
@@ -13,19 +13,22 @@ import { COUNTRIES } from '../constants';
 import ChatList from '../components/chat/ChatList';
 import ChatWindow from '../components/chat/ChatWindow';
 import PaymentReceiptUpload from '../components/PaymentReceiptUpload';
+import ImageUploadField from '../components/ImageUploadField';
 
 export default function CustomerDashboard() {
   const { 
     currentUser, orders, products, formatPrice, updateUserProfile, 
     toggleWishlist, conversations, sendMessage, userLocation, setUserLocation,
-    updatePassword, uploadPaymentReceipt
+    updatePassword, uploadPaymentReceipt, addToCart,
+    vendorApplications, submitVendorApplication
   } = useAppContext();
   const navigate = useNavigate();
   const location = useLocation();
-  const [activeTab, setActiveTab] = useState<'orders' | 'wishlist' | 'profile' | 'messages' | 'subscriptions' | 'groups'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'wishlist' | 'profile' | 'messages' | 'subscriptions' | 'groups' | 'vendor'>('orders');
   const [selectedChatUserId, setSelectedChatUserId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [uploadingReceiptOrder, setUploadingReceiptOrder] = useState<any>(null);
+  const [viewingReceiptUrl, setViewingReceiptUrl] = useState<string | null>(null);
   const { subscriptions, groupPurchases, updateSubscriptionStatus } = useAppContext();
 
   useEffect(() => {
@@ -55,6 +58,29 @@ export default function CustomerDashboard() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [vendorFormData, setVendorFormData] = useState({
+    businessName: '',
+    businessDescription: '',
+    businessAddress: '',
+    phoneNumber: ''
+  });
+  const [isSubmittingVendor, setIsSubmittingVendor] = useState(false);
+  const [vendorSuccess, setVendorSuccess] = useState(false);
+
+  const handleVendorSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingVendor(true);
+    try {
+      await submitVendorApplication(vendorFormData);
+      setVendorSuccess(true);
+    } catch (error) {
+      console.error("Error submitting vendor application:", error);
+    } finally {
+      setIsSubmittingVendor(false);
+    }
+  };
+
+  const myApplication = vendorApplications.find(app => app.userId === currentUser?.id);
 
   if (!currentUser) {
     return <Navigate to="/login" state={{ from: location }} />;
@@ -97,8 +123,57 @@ export default function CustomerDashboard() {
     }
   };
 
-  const myOrders = orders.filter(o => o.customerId === currentUser.id).sort((a, b) => ensureDate(b.createdAt).getTime() - ensureDate(a.createdAt).getTime());
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderStatusFilter, setOrderStatusFilter] = useState<string>('all');
+  const [orderTimeFilter, setOrderTimeFilter] = useState<string>('all');
+
+  const myOrders = orders
+    .filter(o => o.customerId === currentUser.id)
+    .filter(o => {
+      const matchesSearch = o.id.toLowerCase().includes(orderSearch.toLowerCase()) || 
+        o.items.some(item => item.productName.toLowerCase().includes(orderSearch.toLowerCase()));
+      const matchesStatus = orderStatusFilter === 'all' || o.status === orderStatusFilter;
+      
+      let matchesTime = true;
+      if (orderTimeFilter !== 'all') {
+        const orderDate = ensureDate(o.createdAt);
+        const now = new Date();
+        if (orderTimeFilter === '30days') {
+          const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          matchesTime = orderDate >= thirtyDaysAgo;
+        } else if (orderTimeFilter === '6months') {
+          const sixMonthsAgo = new Date();
+          sixMonthsAgo.setMonth(now.getMonth() - 6);
+          matchesTime = orderDate >= sixMonthsAgo;
+        } else if (orderTimeFilter === '1year') {
+          const oneYearAgo = new Date();
+          oneYearAgo.setFullYear(now.getFullYear() - 1);
+          matchesTime = orderDate >= oneYearAgo;
+        }
+      }
+      
+      return matchesSearch && matchesStatus && matchesTime;
+    })
+    .sort((a, b) => ensureDate(b.createdAt).getTime() - ensureDate(a.createdAt).getTime());
+
+  const totalOrdersCount = orders.filter(o => o.customerId === currentUser.id).length;
   const wishlistProducts = products.filter(p => currentUser.wishlist?.includes(p.id));
+
+  const handleBuyAgain = (order: any) => {
+    let itemsAdded = 0;
+    order.items.forEach((item: any) => {
+      const product = products.find(p => p.id === item.productId);
+      if (product) {
+        addToCart(product, item.quantity, item.selectedVariations);
+        itemsAdded++;
+      }
+    });
+    if (itemsAdded > 0) {
+      setSuccessMessage(`${itemsAdded} items added to cart`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+      navigate('/cart');
+    }
+  };
 
   const getStatusColor = (status: OrderStatus) => {
     switch (status) {
@@ -120,6 +195,17 @@ export default function CustomerDashboard() {
       case 'approved': return 'bg-green-100 text-green-800';
       case 'rejected': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getPaymentStatusDisplay = (status: PaymentStatus) => {
+    switch (status) {
+      case 'pending': return 'Pending';
+      case 'receipt_uploaded': return 'Receipt Uploaded';
+      case 'under_review': return 'Under Review';
+      case 'approved': return 'Payment Received';
+      case 'rejected': return 'Payment Not Received';
+      default: return (status as string).replace('_', ' ');
     }
   };
 
@@ -222,6 +308,15 @@ export default function CustomerDashboard() {
             <Settings className="w-5 h-5" />
             Account Settings
           </button>
+          {currentUser?.role === 'customer' && (
+            <button 
+              onClick={() => setActiveTab('vendor')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${activeTab === 'vendor' ? 'bg-green-600 text-white shadow-md shadow-green-200' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              <ShoppingBag className="w-5 h-5" />
+              Become a Vendor
+            </button>
+          )}
         </div>
 
         {/* Main Content */}
@@ -396,18 +491,102 @@ export default function CustomerDashboard() {
 
           {activeTab === 'orders' && (
             <div className="space-y-6">
-              <div className="flex justify-between items-center mb-2">
-                <h1 className="text-2xl font-bold text-gray-900">Order History</h1>
-                <span className="text-sm text-gray-500">{myOrders.length} orders found</span>
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">Order History</h1>
+                  <p className="text-sm text-gray-500">Manage and track your past purchases</p>
+                </div>
+                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm">
+                  <ShoppingBag className="w-4 h-4 text-green-600" />
+                  <span className="text-sm font-bold text-gray-700">{totalOrdersCount} Total Orders</span>
+                </div>
               </div>
 
-              {myOrders.length === 0 ? (
+              {/* Filters & Search */}
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                <div className="flex flex-col lg:flex-row gap-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search by Order ID or Product Name..."
+                      value={orderSearch}
+                      onChange={(e) => setOrderSearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <div className="relative">
+                      <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                      <select
+                        value={orderStatusFilter}
+                        onChange={(e) => setOrderStatusFilter(e.target.value)}
+                        className="pl-9 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-green-500 outline-none appearance-none cursor-pointer font-medium"
+                      >
+                        <option value="all">All Statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="shipped">Shipped</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                      <ChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 rotate-90 pointer-events-none" />
+                    </div>
+                    <div className="relative">
+                      <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                      <select
+                        value={orderTimeFilter}
+                        onChange={(e) => setOrderTimeFilter(e.target.value)}
+                        className="pl-9 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-green-500 outline-none appearance-none cursor-pointer font-medium"
+                      >
+                        <option value="all">All Time</option>
+                        <option value="30days">Last 30 Days</option>
+                        <option value="6months">Last 6 Months</option>
+                        <option value="1year">Last Year</option>
+                      </select>
+                      <ChevronRight className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 rotate-90 pointer-events-none" />
+                    </div>
+                  </div>
+                </div>
+                
+                {(orderSearch || orderStatusFilter !== 'all' || orderTimeFilter !== 'all') && (
+                  <div className="flex items-center justify-between pt-2 border-t border-gray-50">
+                    <p className="text-xs text-gray-500">
+                      Showing <span className="font-bold text-gray-900">{myOrders.length}</span> matching orders
+                    </p>
+                    <button 
+                      onClick={() => { setOrderSearch(''); setOrderStatusFilter('all'); setOrderTimeFilter('all'); }}
+                      className="text-xs font-bold text-green-600 hover:text-green-700 underline"
+                    >
+                      Clear all filters
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {totalOrdersCount === 0 ? (
                 <div className="bg-white p-12 rounded-2xl shadow-sm border border-gray-100 text-center">
-                  <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <Package className="w-10 h-10 text-green-600" />
+                  </div>
                   <h2 className="text-xl font-bold text-gray-900 mb-2">No orders yet</h2>
-                  <p className="text-gray-500 mb-6">Explore our market and place your first order!</p>
-                  <button onClick={() => navigate('/')} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 transition-colors">
+                  <p className="text-gray-500 mb-8 max-w-xs mx-auto">You haven't placed any orders yet. Explore our wide range of halal products!</p>
+                  <button onClick={() => navigate('/')} className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-green-700 transition-all shadow-lg shadow-green-200 active:scale-95">
                     Start Shopping
+                  </button>
+                </div>
+              ) : myOrders.length === 0 ? (
+                <div className="bg-white p-12 rounded-2xl shadow-sm border border-gray-100 text-center">
+                  <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <Search className="w-10 h-10 text-gray-300" />
+                  </div>
+                  <h2 className="text-xl font-bold text-gray-900 mb-2">No matching orders</h2>
+                  <p className="text-gray-500 mb-8">We couldn't find any orders matching your current filters.</p>
+                  <button 
+                    onClick={() => { setOrderSearch(''); setOrderStatusFilter('all'); setOrderTimeFilter('all'); }}
+                    className="bg-gray-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-gray-800 transition-all active:scale-95"
+                  >
+                    Clear Filters
                   </button>
                 </div>
               ) : (
@@ -437,20 +616,49 @@ export default function CustomerDashboard() {
                         </div>
                         
                         {/* Status Tracker */}
-                        <div className="px-6 py-8 border-b border-gray-100">
-                          <div className="relative">
-                            <div className="overflow-hidden h-1.5 mb-4 text-xs flex rounded-full bg-gray-100">
+                        <div className="px-6 py-10 border-b border-gray-100 bg-white">
+                          <div className="relative max-w-3xl mx-auto">
+                            {/* Progress Line */}
+                            <div className="absolute top-5 left-0 w-full h-1 bg-gray-100 rounded-full overflow-hidden">
                               <div 
                                 style={{ width: `${(currentStepIndex / (STATUS_STEPS.length - 1)) * 100}%` }} 
-                                className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-green-500 transition-all duration-500"
+                                className="h-full bg-green-500 transition-all duration-1000 ease-out"
                               ></div>
                             </div>
-                            <div className="flex justify-between text-[10px] font-bold text-gray-400 px-1 uppercase tracking-widest">
-                              {STATUS_STEPS.map((step, index) => (
-                                <div key={step} className={`flex flex-col items-center w-1/5 ${index <= currentStepIndex ? 'text-green-600' : ''}`}>
-                                  <span className="capitalize mt-1 hidden sm:block">{step}</span>
-                                </div>
-                              ))}
+                            
+                            {/* Steps */}
+                            <div className="relative flex justify-between">
+                              {STATUS_STEPS.map((step, index) => {
+                                const isCompleted = index <= currentStepIndex;
+                                const isCurrent = index === currentStepIndex;
+                                
+                                return (
+                                  <div key={step} className="flex flex-col items-center group">
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center border-4 transition-all duration-500 z-10 ${
+                                      isCompleted 
+                                        ? 'bg-green-500 border-white text-white shadow-lg shadow-green-100' 
+                                        : 'bg-white border-gray-100 text-gray-300'
+                                    } ${isCurrent ? 'ring-4 ring-green-100 scale-110' : ''}`}>
+                                      {index < currentStepIndex ? (
+                                        <CheckCircle className="w-5 h-5" />
+                                      ) : (
+                                        <div className="flex items-center justify-center">
+                                          {step === 'pending' && <Clock className="w-5 h-5" />}
+                                          {step === 'confirmed' && <CheckCircle className="w-5 h-5" />}
+                                          {step === 'preparing' && <Package className="w-5 h-5" />}
+                                          {step === 'shipped' && <Truck className="w-5 h-5" />}
+                                          {step === 'delivered' && <MapPin className="w-5 h-5" />}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <span className={`mt-3 text-[10px] font-bold uppercase tracking-widest transition-colors duration-500 hidden sm:block ${
+                                      isCompleted ? 'text-green-600' : 'text-gray-400'
+                                    }`}>
+                                      {step}
+                                    </span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         </div>
@@ -502,7 +710,7 @@ export default function CustomerDashboard() {
                                   <p className="text-xs text-gray-400 mb-2 uppercase tracking-widest font-bold">Payment Status</p>
                                   <div className="flex items-center gap-2">
                                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${getPaymentStatusColor(order.paymentStatus || 'pending')}`}>
-                                      {order.paymentStatus?.replace('_', ' ') || 'pending'}
+                                      {getPaymentStatusDisplay(order.paymentStatus || 'pending')}
                                     </span>
                                     <p className="text-xs text-gray-600 font-medium capitalize">
                                       via {order.paymentMethod?.replace('_', ' ')}
@@ -519,6 +727,22 @@ export default function CustomerDashboard() {
                                       {order.paymentStatus === 'rejected' ? 'Re-upload Receipt' : 'Upload Receipt'}
                                     </button>
                                   )}
+                                  {order.paymentReceipt?.imageUrl && (
+                                    <button 
+                                      onClick={() => setViewingReceiptUrl(order.paymentReceipt?.imageUrl || null)}
+                                      className="px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors shadow-sm flex items-center gap-1.5"
+                                    >
+                                      <Eye className="w-3 h-3" />
+                                      View Receipt
+                                    </button>
+                                  )}
+                                  <button 
+                                    onClick={() => handleBuyAgain(order)}
+                                    className="px-3 py-1.5 bg-green-50 text-green-700 border border-green-100 rounded-lg text-xs font-bold hover:bg-green-100 transition-colors shadow-sm flex items-center gap-1.5"
+                                  >
+                                    <RefreshCw className="w-3 h-3" />
+                                    Buy Again
+                                  </button>
                                   <button 
                                     onClick={() => {
                                       setSelectedChatUserId(order.vendorId);
@@ -541,7 +765,13 @@ export default function CustomerDashboard() {
 
                               {order.paymentStatus === 'receipt_uploaded' && (
                                 <p className="text-[10px] text-blue-600 font-bold mt-2 flex items-center gap-1">
-                                  <Clock className="w-3 h-3" /> Receipt uploaded. Awaiting vendor review.
+                                  <Clock className="w-3 h-3" /> Payment submitted – please wait for confirmation
+                                </p>
+                              )}
+
+                              {order.paymentStatus === 'approved' && (
+                                <p className="text-[10px] text-green-600 font-bold mt-2 flex items-center gap-1">
+                                  <CheckCircle className="w-3 h-3" /> Payment confirmed – your order is now confirmed
                                 </p>
                               )}
                             </div>
@@ -664,6 +894,129 @@ export default function CustomerDashboard() {
             </div>
           )}
 
+          {activeTab === 'vendor' && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+              <div className="max-w-2xl mx-auto">
+                <div className="text-center mb-8">
+                  <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600 mx-auto mb-4">
+                    <ShoppingBag className="w-8 h-8" />
+                  </div>
+                  <h2 className="text-2xl font-black text-gray-900">Grow Your Business with Halal Market</h2>
+                  <p className="text-gray-500 mt-2">Join our community of trusted vendors and reach thousands of customers looking for quality halal products.</p>
+                </div>
+
+                {myApplication ? (
+                  <div className="bg-gray-50 rounded-2xl p-8 border border-gray-100 text-center">
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                      myApplication.status === 'pending' ? 'bg-amber-100 text-amber-600' :
+                      myApplication.status === 'approved' ? 'bg-emerald-100 text-emerald-600' :
+                      'bg-red-100 text-red-600'
+                    }`}>
+                      {myApplication.status === 'pending' ? <Clock className="w-6 h-6" /> :
+                       myApplication.status === 'approved' ? <CheckCircle className="w-6 h-6" /> :
+                       <XCircle className="w-6 h-6" />}
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900 capitalize">Application {myApplication.status}</h3>
+                    <div className="text-gray-500 mt-2">
+                      {myApplication.status === 'pending' && "Your application is currently being reviewed by our team. We'll notify you once a decision is made."}
+                      {myApplication.status === 'approved' && "Congratulations! Your application has been approved. Please refresh the page to access your vendor dashboard."}
+                      {myApplication.status === 'rejected' && (
+                        <div>
+                          <p>Unfortunately, your application was not approved at this time.</p>
+                          <p className="mt-2 text-red-600 font-bold">Reason: {myApplication.rejectionReason}</p>
+                          <button 
+                            onClick={() => {
+                              // Allow re-submission by deleting or just resetting local state if we wanted to support it
+                              // For now just show the reason
+                            }}
+                            className="mt-4 text-emerald-600 font-bold hover:underline"
+                          >
+                            Contact Support for more info
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {myApplication.status === 'approved' && (
+                      <button 
+                        onClick={() => window.location.reload()}
+                        className="mt-6 px-8 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-200"
+                      >
+                        Go to Vendor Dashboard
+                      </button>
+                    )}
+                  </div>
+                ) : vendorSuccess ? (
+                  <div className="bg-emerald-50 rounded-2xl p-8 border border-emerald-100 text-center">
+                    <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <CheckCircle className="w-6 h-6" />
+                    </div>
+                    <h3 className="text-xl font-bold text-emerald-900">Application Submitted!</h3>
+                    <p className="text-emerald-700 mt-2">Thank you for applying. Our team will review your business details and get back to you soon.</p>
+                  </div>
+                ) : (
+                  <form onSubmit={handleVendorSubmit} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-gray-700">Business Name</label>
+                        <input
+                          required
+                          type="text"
+                          value={vendorFormData.businessName}
+                          onChange={(e) => setVendorFormData({...vendorFormData, businessName: e.target.value})}
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                          placeholder="e.g. Halal Delights"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-gray-700">Phone Number</label>
+                        <input
+                          required
+                          type="tel"
+                          value={vendorFormData.phoneNumber}
+                          onChange={(e) => setVendorFormData({...vendorFormData, phoneNumber: e.target.value})}
+                          className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                          placeholder="+1 (555) 000-0000"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-gray-700">Business Address</label>
+                      <input
+                        required
+                        type="text"
+                        value={vendorFormData.businessAddress}
+                        onChange={(e) => setVendorFormData({...vendorFormData, businessAddress: e.target.value})}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                        placeholder="123 Market St, City, Country"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-gray-700">Business Description</label>
+                      <textarea
+                        required
+                        rows={4}
+                        value={vendorFormData.businessDescription}
+                        onChange={(e) => setVendorFormData({...vendorFormData, businessDescription: e.target.value})}
+                        className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none transition-all resize-none"
+                        placeholder="Tell us about your products and business..."
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isSubmittingVendor}
+                      className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black text-lg hover:bg-emerald-700 shadow-xl shadow-emerald-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSubmittingVendor ? 'Submitting...' : 'Submit Application'}
+                    </button>
+                  </form>
+                )}
+              </div>
+            </div>
+          )}
+
           {activeTab === 'profile' && (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="p-6 border-b border-gray-100">
@@ -695,14 +1048,12 @@ export default function CustomerDashboard() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Profile Image URL</label>
-                    <input 
-                      type="url" 
-                      name="profileImage" 
-                      value={profileData.profileImage} 
-                      onChange={handleProfileChange} 
-                      placeholder="https://example.com/avatar.jpg" 
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-green-500 focus:bg-white outline-none transition-all font-medium" 
+                    <ImageUploadField
+                      label="Profile Image"
+                      value={profileData.profileImage}
+                      onChange={(url) => setProfileData({ ...profileData, profileImage: url })}
+                      folder="customers/profiles"
+                      placeholder="https://example.com/profile.jpg"
                     />
                   </div>
 
@@ -825,6 +1176,27 @@ export default function CustomerDashboard() {
           order={uploadingReceiptOrder} 
           onClose={() => setUploadingReceiptOrder(null)} 
         />
+      )}
+      
+      {/* Receipt Image Lightbox */}
+      {viewingReceiptUrl && (
+        <div 
+          className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-4 cursor-zoom-out"
+          onClick={() => setViewingReceiptUrl(null)}
+        >
+          <button 
+            onClick={() => setViewingReceiptUrl(null)}
+            className="absolute top-6 right-6 text-white hover:text-gray-300 transition-colors"
+          >
+            <X className="w-8 h-8" />
+          </button>
+          <img 
+            src={viewingReceiptUrl} 
+            alt="Payment Receipt Full View" 
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
       )}
     </div>
   );

@@ -117,6 +117,7 @@ export interface Order {
   customerName: string;
   vendorId: string;
   vendorName: string;
+  groupPurchaseId?: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   totalAmount: number;
@@ -173,6 +174,7 @@ export interface ChatMessage {
   senderId: string;
   receiverId: string;
   content: string;
+  imageUrl?: string;
   isRead: boolean;
   createdAt: string;
 }
@@ -239,6 +241,8 @@ export interface GroupMember {
   customerName: string;
   customerProfileImage?: string;
   joinedAt: string;
+  paymentMethod: PaymentMethodType;
+  shippingDetails: ShippingDetails;
 }
 
 export interface InvestmentOpportunity {
@@ -298,11 +302,27 @@ export interface WalletTransaction {
 
 export interface AuditLog {
   id: string;
-  action: 'GRANT_ADMIN' | 'REVOKE_ADMIN' | 'SUSPEND_USER' | 'ACTIVATE_USER' | 'UPDATE_USER_ROLE' | 'GRANT_MODERATOR' | 'REVOKE_MODERATOR' | 'SYSTEM_CONFIG_CHANGE';
+  action: 'GRANT_ADMIN' | 'REVOKE_ADMIN' | 'SUSPEND_USER' | 'ACTIVATE_USER' | 'UPDATE_USER_ROLE' | 'GRANT_MODERATOR' | 'REVOKE_MODERATOR' | 'SYSTEM_CONFIG_CHANGE' | 'APPROVE_VENDOR' | 'REJECT_VENDOR';
   performedBy: string;
   performedByName: string;
   targetUserId: string;
   targetUserName: string;
   details?: string;
   createdAt: string | Timestamp;
+}
+
+export interface VendorApplication {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  businessName: string;
+  businessDescription: string;
+  businessAddress: string;
+  phoneNumber: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejectionReason?: string;
+  createdAt: string | Timestamp;
+  reviewedAt?: string | Timestamp;
+  reviewedBy?: string;
 }

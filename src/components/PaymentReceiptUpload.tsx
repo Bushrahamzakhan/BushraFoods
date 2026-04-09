@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Camera, Upload, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { Order } from '../types';
+import ImageUploadField from './ImageUploadField';
 
 interface PaymentReceiptUploadProps {
   order: Order;
@@ -57,8 +58,8 @@ export default function PaymentReceiptUpload({ order, onClose }: PaymentReceiptU
               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <CheckCircle className="w-8 h-8 text-green-600" />
               </div>
-              <h4 className="text-xl font-bold text-gray-900 mb-2">Receipt Uploaded!</h4>
-              <p className="text-gray-500">The vendor will review your payment shortly.</p>
+              <h4 className="text-xl font-bold text-gray-900 mb-2">Payment Submitted!</h4>
+              <p className="text-gray-500">Payment submitted – please wait for confirmation.</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -88,35 +89,14 @@ export default function PaymentReceiptUpload({ order, onClose }: PaymentReceiptU
               )}
 
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Receipt Image URL</label>
-                  <div className="relative">
-                    <input 
-                      type="url" 
-                      required
-                      placeholder="https://example.com/receipt.jpg"
-                      value={imageUrl}
-                      onChange={(e) => setImageUrl(e.target.value)}
-                      className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all pr-10"
-                    />
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                      <Camera className="w-4 h-4" />
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-gray-500">Please upload your receipt to an image hosting service and provide the link here.</p>
-                </div>
-
-                {imageUrl && (
-                  <div className="relative aspect-video rounded-xl overflow-hidden border border-gray-100 bg-gray-50">
-                    <img 
-                      src={imageUrl} 
-                      alt="Receipt Preview" 
-                      className="w-full h-full object-contain"
-                      onError={() => setError('Invalid image URL')}
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
-                )}
+                <ImageUploadField
+                  label="Payment Receipt / Screenshot"
+                  value={imageUrl}
+                  onChange={setImageUrl}
+                  folder="payments/receipts"
+                  placeholder="https://example.com/receipt.jpg"
+                />
+              </div>
 
                 {error && (
                   <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-xs font-bold flex items-center gap-2">
@@ -143,7 +123,6 @@ export default function PaymentReceiptUpload({ order, onClose }: PaymentReceiptU
                     </>
                   )}
                 </button>
-              </div>
             </form>
           )}
         </div>

@@ -1,9 +1,13 @@
 import React from 'react';
 import { ArrowLeft, HelpCircle, Package, Truck, CreditCard, User, Shield, MessageSquare, Search } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useAppContext } from '../context/AppContext';
 
 export default function Help() {
   const navigate = useNavigate();
+  const { admins } = useAppContext();
+
+  const supportAdmin = admins.find(a => a.role === 'support') || admins[0];
 
   const helpTopics = [
     { icon: <Package className="w-6 h-6" />, title: 'Your Orders', description: 'Track packages, edit or cancel orders' },
@@ -56,7 +60,11 @@ export default function Help() {
           Our customer service team is available 24/7 to assist you with any questions or concerns.
         </p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <Link to="/customer" state={{ activeTab: 'messages' }} className="px-8 py-3 bg-green-500 hover:bg-green-600 rounded-xl font-bold transition-colors flex items-center gap-2">
+          <Link 
+            to="/customer" 
+            state={{ activeTab: 'messages', openChatWith: supportAdmin?.id }} 
+            className="px-8 py-3 bg-green-500 hover:bg-green-600 rounded-xl font-bold transition-colors flex items-center gap-2"
+          >
             <MessageSquare className="w-5 h-5" /> Start a Chat
           </Link>
           <button className="px-8 py-3 bg-white/10 hover:bg-white/20 rounded-xl font-bold transition-colors">

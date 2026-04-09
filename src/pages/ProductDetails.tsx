@@ -333,6 +333,9 @@ export default function ProductDetails() {
                       </div>
                       <p className="text-xs font-bold text-emerald-700">{activeGroup.currentMembers}/{activeGroup.targetMembers} joined</p>
                     </div>
+                    <div className="mt-2 inline-block bg-emerald-600 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest shadow-sm">
+                      Save {Math.round(((product.price - activeGroup.price) / product.price) * 100)}%
+                    </div>
                   </div>
                 </div>
                 <div className="text-right">
@@ -413,6 +416,9 @@ export default function ProductDetails() {
                 <div>
                   <p className="text-sm font-bold text-blue-900">Start a Group Buy</p>
                   <p className="text-xs text-blue-700">Get it for {formatPrice(product.groupPrice, product.currency)} with {product.targetMembers || 5} friends</p>
+                  <div className="mt-1 inline-block bg-blue-600 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest shadow-sm">
+                    Save {Math.round(((product.price - product.groupPrice) / product.price) * 100)}%
+                  </div>
                 </div>
               </div>
               <button 

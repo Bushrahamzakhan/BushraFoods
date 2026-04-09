@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { Send, X, User as UserIcon, Store } from 'lucide-react';
+import { Send, X, User as UserIcon, Store, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { ChatConversation } from '../../types';
 import { ensureDate } from '../../lib/utils';
 
@@ -10,8 +10,10 @@ interface ChatWindowProps {
 }
 
 export default function ChatWindow({ otherUserId, onClose }: ChatWindowProps) {
-  const { currentUser, activeMessages, fetchMessages, sendMessage, conversations, setActiveChatUserId, vendors } = useAppContext();
+  const { currentUser, activeMessages, fetchMessages, sendMessage, conversations, setActiveChatUserId, vendors, uploadImage } = useAppContext();
   const [message, setMessage] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const conversation = conversations.find(c => c.otherUserId === otherUserId);
@@ -29,6 +31,22 @@ export default function ChatWindow({ otherUserId, onClose }: ChatWindowProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeMessages]);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+      const url = await uploadImage(file, 'chat');
+      await sendMessage(otherUserId, '', url);
+    } catch (error) {
+      console.error("Failed to upload image:", error);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,6 +88,17 @@ export default function ChatWindow({ otherUserId, onClose }: ChatWindowProps) {
                   ? 'bg-green-600 text-white rounded-tr-none' 
                   : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none shadow-sm'
               }`}>
+                {msg.imageUrl && (
+                  <div className="mb-2 rounded-lg overflow-hidden border border-black/5">
+                    <img 
+                      src={msg.imageUrl} 
+                      alt="Shared image" 
+                      className="max-w-full h-auto max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                      onClick={() => window.open(msg.imageUrl, '_blank')}
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                )}
                 <p>{msg.content}</p>
                 <p className={`text-[10px] mt-1 ${isMe ? 'text-green-100' : 'text-gray-400'}`}>
                   {ensureDate(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -82,22 +111,43 @@ export default function ChatWindow({ otherUserId, onClose }: ChatWindowProps) {
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSend} className="p-4 bg-white border-t border-gray-100 flex gap-2">
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Type a message..."
-          className="flex-grow px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all"
-        />
-        <button
-          type="submit"
-          disabled={!message.trim()}
-          className="p-2 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 transition-all shadow-md shadow-green-100"
-        >
-          <Send className="w-5 h-5" />
-        </button>
-      </form>
+      <div className="p-4 bg-white border-t border-gray-100">
+        <form onSubmit={handleSend} className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-xl transition-all"
+          >
+            {isUploading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <ImageIcon className="w-5 h-5" />
+            )}
+          </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleImageUpload} 
+            className="hidden" 
+            accept="image/*" 
+          />
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Type a message..."
+            className="flex-grow px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all"
+          />
+          <button
+            type="submit"
+            disabled={!message.trim() || isUploading}
+            className="p-2 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 transition-all shadow-md shadow-green-100"
+          >
+            <Send className="w-5 h-5" />
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

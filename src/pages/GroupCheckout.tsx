@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { CheckCircle, CreditCard, Users, MapPin, Banknote, ArrowLeft, Info } from 'lucide-react';
+import { CheckCircle, CreditCard, Users, MapPin, Banknote, ArrowLeft, Info, QrCode, Building2, Wallet, HelpCircle, ShieldCheck, Zap } from 'lucide-react';
 import { PaymentMethodType, ShippingDetails } from '../types';
+import { motion } from 'motion/react';
 
 export default function GroupCheckout() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { products, groupPurchases, createGroupPurchase, joinGroupPurchase, currentUser, formatPrice } = useAppContext();
+  const { products, groupPurchases, createGroupPurchase, joinGroupPurchase, currentUser, formatPrice, vendors } = useAppContext();
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -18,6 +19,7 @@ export default function GroupCheckout() {
   const groupId = location.state?.groupId || null;
   
   const product = products.find(p => p.id === id);
+  const vendor = vendors.find(v => v.id === product?.vendorId);
   const activeGroup = groupId ? groupPurchases.find(g => g.id === groupId) : null;
   
   // Form state
@@ -72,10 +74,21 @@ export default function GroupCheckout() {
     // Simulate payment processing
     setTimeout(async () => {
       try {
+        const shippingDetails: ShippingDetails = {
+          fullName: formData.fullName,
+          email: formData.email,
+          phone: formData.phone,
+          address: formData.address,
+          city: formData.city,
+          state: formData.state,
+          country: formData.country,
+          zipCode: formData.zipCode
+        };
+
         if (isJoining && groupId) {
-          await joinGroupPurchase(groupId);
+          await joinGroupPurchase(groupId, paymentMethod, shippingDetails);
         } else {
-          await createGroupPurchase(product.id, product.targetMembers || 5, 24);
+          await createGroupPurchase(product.id, product.targetMembers || 5, paymentMethod, shippingDetails, 24);
         }
         setIsProcessing(false);
         setIsSuccess(true);
@@ -136,18 +149,24 @@ export default function GroupCheckout() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <button onClick={() => navigate(-1)} className="text-gray-500 hover:text-gray-900 mb-6 flex items-center gap-2 transition-colors">
-        <ArrowLeft className="w-4 h-4" /> Back
+    <div className="max-w-6xl mx-auto px-4 sm:px-6">
+      <button onClick={() => navigate(-1)} className="text-gray-500 hover:text-gray-900 mb-6 flex items-center gap-2 transition-colors group">
+        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" /> Back
       </button>
 
       <div className="flex flex-col lg:flex-row gap-8">
-        <div className="lg:w-2/3">
-          <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex items-start gap-3 mb-8">
-            <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-blue-800">
-              <p className="font-bold mb-1">Group Purchase Policy (Prepaid Model)</p>
-              <p>You are paying the discounted group price upfront. If the group does not reach its target of {product.targetMembers || 5} members within the time limit, you will receive a full automatic refund.</p>
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="lg:w-2/3"
+        >
+          <div className="bg-emerald-50 border border-emerald-100 p-5 rounded-2xl flex items-start gap-4 mb-8 shadow-sm">
+            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white flex-shrink-0 shadow-lg shadow-emerald-100">
+              <Zap className="w-5 h-5" />
+            </div>
+            <div className="text-sm text-emerald-900">
+              <p className="font-bold mb-1">Group Purchase Activated!</p>
+              <p className="opacity-80">You are paying the discounted group price upfront. If the group does not reach its target of <span className="font-bold">{product.targetMembers || 5} members</span> within the time limit, you will receive a <span className="font-bold underline">full automatic refund</span>. No risk involved!</p>
             </div>
           </div>
 
@@ -199,7 +218,7 @@ export default function GroupCheckout() {
                 <CreditCard className="w-5 h-5 text-emerald-600" /> Payment Method
               </h2>
               
-              <div className="grid grid-cols-1 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('card')}
@@ -210,8 +229,33 @@ export default function GroupCheckout() {
                   }`}
                 >
                   <CreditCard className="w-6 h-6" />
-                  <span className="font-semibold">Credit/Debit Card</span>
+                  <div className="text-left">
+                    <p className="font-bold">Credit/Debit Card</p>
+                    <p className="text-[10px] opacity-70">Secure online payment</p>
+                  </div>
                 </button>
+
+                {vendor?.paymentMethods?.filter(m => m.isActive).map(method => (
+                  <button
+                    key={method.id}
+                    type="button"
+                    onClick={() => setPaymentMethod(method.type)}
+                    className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-colors ${
+                      paymentMethod === method.type 
+                        ? 'border-emerald-600 bg-emerald-50 text-emerald-800' 
+                        : 'border-gray-200 hover:border-emerald-200 text-gray-600'
+                    }`}
+                  >
+                    {method.type === 'alipay' || method.type === 'wechat' ? <QrCode className="w-6 h-6" /> : 
+                     method.type === 'bank_transfer' ? <Building2 className="w-6 h-6" /> :
+                     method.type === 'easypaisa' || method.type === 'payoneer' || method.type === 'paypal' ? <Wallet className="w-6 h-6" /> :
+                     <HelpCircle className="w-6 h-6" />}
+                    <div className="text-left">
+                      <p className="font-bold">{method.name}</p>
+                      <p className="text-[10px] opacity-70 capitalize">{method.type.replace('_', ' ')}</p>
+                    </div>
+                  </button>
+                ))}
               </div>
 
               {paymentMethod === 'card' && (
@@ -250,50 +294,78 @@ export default function GroupCheckout() {
               )}
             </button>
           </form>
-        </div>
+        </motion.div>
 
         {/* Order Summary Sidebar */}
-        <div className="lg:w-1/3">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 sticky top-24">
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.2 }}
+          className="lg:w-1/3"
+        >
+          <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 sticky top-24">
             <h2 className="text-xl font-bold text-gray-900 mb-6">Group Summary</h2>
             
             <div className="flex gap-4 mb-6">
-              <img src={product.imageUrl} alt={product.name} className="w-20 h-20 object-cover rounded-xl" referrerPolicy="no-referrer" />
+              <div className="relative">
+                <img src={product.imageUrl} alt={product.name} className="w-24 h-24 object-cover rounded-2xl shadow-sm border border-gray-100" referrerPolicy="no-referrer" />
+                <div className="absolute -top-2 -right-2 bg-emerald-600 text-white text-[10px] font-black px-2 py-1 rounded-lg shadow-md uppercase tracking-widest">
+                  Group Deal
+                </div>
+              </div>
               <div className="flex-grow">
-                <h4 className="text-sm font-bold text-gray-900 line-clamp-2">{product.name}</h4>
-                <p className="text-xs text-gray-500 mt-1">Vendor: {product.vendorName}</p>
-                <div className="flex items-center gap-1 mt-2">
-                  <Users className="w-3 h-3 text-emerald-600" />
-                  <span className="text-xs font-bold text-emerald-700">
-                    {isJoining && activeGroup ? `${activeGroup.currentMembers}/${activeGroup.targetMembers}` : `0/${product.targetMembers || 5}`} Members
-                  </span>
+                <h4 className="text-sm font-bold text-gray-900 line-clamp-2 leading-tight">{product.name}</h4>
+                <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                  <Building2 className="w-3 h-3" /> {product.vendorName}
+                </p>
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Group Progress</span>
+                    <span className="text-[10px] font-bold text-emerald-600">{isJoining && activeGroup ? activeGroup.currentMembers : 0}/{product.targetMembers || 5}</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-emerald-500 transition-all duration-1000" 
+                      style={{ width: `${((isJoining && activeGroup ? activeGroup.currentMembers : 0) / (product.targetMembers || 5)) * 100}%` }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="border-t border-gray-100 pt-4 space-y-3">
-              <div className="flex justify-between text-gray-600 text-sm">
-                <span>Original Price</span>
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3 mb-6">
+              <div className="flex justify-between text-gray-500 text-sm">
+                <span>Standard Price</span>
                 <span className="line-through">{formatPrice(product.price, product.currency)}</span>
               </div>
               <div className="flex justify-between text-emerald-600 text-sm font-bold">
-                <span>Group Discount</span>
+                <span className="flex items-center gap-1">
+                  <Zap className="w-3 h-3" /> Group Savings
+                </span>
                 <span>-{formatPrice(product.price - (product.groupPrice || 0), product.currency)}</span>
               </div>
-              <div className="border-t border-gray-100 pt-3 flex justify-between items-center">
-                <span className="text-lg font-bold text-gray-900">Total</span>
-                <span className="text-2xl font-extrabold text-emerald-700">{formatPrice(product.groupPrice || 0, product.currency)}</span>
+              <div className="pt-3 border-t border-gray-200 flex justify-between items-center">
+                <span className="text-base font-bold text-gray-900">You Pay</span>
+                <span className="text-2xl font-black text-emerald-700">{formatPrice(product.groupPrice || 0, product.currency)}</span>
               </div>
             </div>
             
-            <div className="mt-6 bg-emerald-50 p-4 rounded-lg flex items-start gap-3">
-              <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-emerald-700 leading-relaxed">
-                You are joining a collaborative purchase. Your order will be fulfilled as soon as the group is complete.
-              </p>
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-xl border border-blue-100">
+                <ShieldCheck className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                <p className="text-[11px] text-blue-800 leading-relaxed">
+                  <span className="font-bold">Buyer Protection:</span> Your funds are held securely. If the group doesn't complete, we'll refund you instantly.
+                </p>
+              </div>
+              
+              <div className="flex items-center justify-center gap-4 opacity-50 grayscale">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/Visa_Inc._logo.svg" alt="Visa" className="h-4" />
+                <img src="https://upload.wikimedia.org/wikipedia/commons/2/2a/Mastercard-logo.svg" alt="Mastercard" className="h-6" />
+                <img src="https://upload.wikimedia.org/wikipedia/commons/b/b5/PayPal.svg" alt="PayPal" className="h-4" />
+              </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
     </div>
   );
