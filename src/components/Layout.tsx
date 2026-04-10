@@ -4,6 +4,7 @@ import { ShoppingCart, Store, User as UserIcon, LogOut, Menu, X, Package, Search
 import { useAppContext } from '../context/AppContext';
 import { SUPPORTED_CURRENCIES } from '../types';
 import { ensureDate } from '../lib/utils';
+import NotificationCenter from './NotificationCenter';
 
 export default function Layout({ children }: { children?: React.ReactNode }) {
   const { currentUser, logout, cart, isAuthReady, preferredCurrency, setPreferredCurrency, notifications, markNotificationAsRead, conversations } = useAppContext();
@@ -244,41 +245,8 @@ export default function Layout({ children }: { children?: React.ReactNode }) {
                     <ChevronDown className="w-3 h-3 text-gray-400" />
                   </div>
 
-                  <div className="absolute right-0 top-full mt-0 w-80 bg-white rounded-md shadow-xl border border-gray-200 hidden group-hover/notif:block text-black py-2 z-50">
-                    <div className="px-4 py-2 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-                      <p className="font-bold">Notifications</p>
-                      {unreadCount > 0 && (
-                        <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">
-                          {unreadCount} NEW
-                        </span>
-                      )}
-                    </div>
-                    <div className="max-h-80 overflow-y-auto">
-                      {notifications.length === 0 ? (
-                        <div className="p-6 text-center">
-                          <Bell className="w-6 h-6 text-gray-200 mx-auto mb-2" />
-                          <p className="text-xs text-gray-500">No notifications yet</p>
-                        </div>
-                      ) : (
-                        notifications.map(notification => (
-                          <div 
-                            key={notification.id} 
-                            onClick={() => markNotificationAsRead(notification.id)}
-                            className={`p-3 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors ${!notification.isRead ? 'bg-emerald-50/30' : ''}`}
-                          >
-                            <div className="flex justify-between items-start mb-0.5">
-                              <h4 className={`text-xs font-bold ${!notification.isRead ? 'text-emerald-900' : 'text-gray-900'}`}>
-                                {notification.title}
-                              </h4>
-                              <span className="text-[9px] text-gray-400 whitespace-nowrap ml-2">
-                                {ensureDate(notification.createdAt).toLocaleDateString()}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-gray-600 line-clamp-1">{notification.message}</p>
-                          </div>
-                        ))
-                      )}
-                    </div>
+                  <div className="absolute right-0 top-full mt-0 w-80 z-50 hidden group-hover/notif:block">
+                    <NotificationCenter />
                   </div>
                 </div>
               )}

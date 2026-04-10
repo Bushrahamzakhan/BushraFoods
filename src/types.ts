@@ -163,10 +163,12 @@ export interface Notification {
   userId: string;
   title: string;
   message: string;
-  type: string;
+  type: 'order' | 'payment' | 'system' | 'message' | 'approval';
   orderId?: string;
+  link?: string;
   isRead: boolean;
-  createdAt: string;
+  isArchived?: boolean;
+  createdAt: string | Timestamp;
 }
 
 export interface ChatMessage {

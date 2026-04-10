@@ -118,11 +118,31 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
-const cleanData = (obj: any) => {
-  const newObj = { ...obj };
-  Object.keys(newObj).forEach(key => {
-    if (newObj[key] === undefined) {
-      delete newObj[key];
+const cleanData = (obj: any): any => {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+
+  // Check if it's a plain object or an array
+  // Firestore FieldValues and Timestamps are NOT plain objects
+  const isPlainObject = (val: any) => {
+    if (typeof val !== 'object' || val === null) return false;
+    const proto = Object.getPrototypeOf(val);
+    return proto === Object.prototype || proto === null;
+  };
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanData(item));
+  }
+
+  if (!isPlainObject(obj)) {
+    return obj;
+  }
+
+  const newObj: any = {};
+  Object.keys(obj).forEach(key => {
+    if (obj[key] !== undefined) {
+      newObj[key] = cleanData(obj[key]);
     }
   });
   return newObj;
@@ -196,6 +216,9 @@ interface AppContextType {
   isAuthReady: boolean;
   notifications: Notification[];
   markNotificationAsRead: (id: string) => Promise<void>;
+  markAllNotificationsAsRead: () => Promise<void>;
+  archiveNotification: (id: string) => Promise<void>;
+  clearNotifications: () => Promise<void>;
   conversations: ChatConversation[];
   activeMessages: ChatMessage[];
   activeChatUserId: string | null;
@@ -413,18 +436,73 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [activeMessages, setActiveMessages] = useState<ChatMessage[]>([]);
   const [activeChatUserId, setActiveChatUserId] = useState<string | null>(null);
 
-  const sendNotification = async (userId: string, title: string, message: string, type: 'order' | 'payment' | 'system' = 'system') => {
+  const sendNotification = async (
+    userId: string, 
+    title: string, 
+    message: string, 
+    type: 'order' | 'payment' | 'system' | 'message' | 'approval' = 'system',
+    link?: string
+  ) => {
     try {
       await addDoc(collection(db, 'notifications'), cleanData({
         userId,
         title,
         message,
         type,
-        read: false,
+        isRead: false,
+        isArchived: false,
+        link,
         createdAt: serverTimestamp()
       }));
     } catch (e) {
       console.error("Failed to send notification:", e);
+    }
+  };
+
+  const markNotificationAsRead = async (notificationId: string) => {
+    try {
+      await updateDoc(doc(db, 'notifications', notificationId), {
+        isRead: true
+      });
+    } catch (e) {
+      console.error("Failed to mark notification as read:", e);
+    }
+  };
+
+  const markAllNotificationsAsRead = async () => {
+    if (!currentUser) return;
+    try {
+      const unreadNotifications = notifications.filter(n => !n.isRead);
+      const batch = writeBatch(db);
+      unreadNotifications.forEach(n => {
+        batch.update(doc(db, 'notifications', n.id), { isRead: true });
+      });
+      await batch.commit();
+    } catch (e) {
+      console.error("Failed to mark all notifications as read:", e);
+    }
+  };
+
+  const archiveNotification = async (notificationId: string) => {
+    try {
+      await updateDoc(doc(db, 'notifications', notificationId), {
+        isArchived: true
+      });
+    } catch (e) {
+      console.error("Failed to archive notification:", e);
+    }
+  };
+
+  const clearNotifications = async () => {
+    if (!currentUser) return;
+    try {
+      const batch = writeBatch(db);
+      notifications.forEach(n => {
+        batch.delete(doc(db, 'notifications', n.id));
+      });
+      await batch.commit();
+    } catch (e) {
+      console.error("Failed to clear notifications:", e);
     }
   };
 
@@ -532,7 +610,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         order.vendorId,
         'Payment Receipt Uploaded',
         `A payment receipt has been uploaded for order #${orderId.slice(0, 8).toUpperCase()}. Please review it.`,
-        'payment'
+        'payment',
+        '/vendor?tab=orders'
       );
 
       // Notify Admins
@@ -541,7 +620,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           admin.id,
           'New Payment Receipt',
           `Order #${orderId.slice(0, 8).toUpperCase()} has a new payment receipt awaiting review.`,
-          'payment'
+          'payment',
+          '/admin?tab=payments'
         );
       }
     } catch (e) {
@@ -585,7 +665,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         status === 'approved' 
           ? `Your payment for order #${orderId.slice(0, 8).toUpperCase()} has been confirmed. Your order is now confirmed!`
           : `Your payment for order #${orderId.slice(0, 8).toUpperCase()} was rejected. Reason: ${reason}`,
-        'payment'
+        'payment',
+        '/dashboard?tab=orders'
       );
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `orders/${orderId}`);
@@ -737,7 +818,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           admin.id,
           'New Vendor Application',
           `${currentUser.name} has applied to become a vendor.`,
-          'system'
+          'approval',
+          '/admin?tab=vendor-applications'
         );
       }
       
@@ -802,7 +884,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         status === 'approved' 
           ? `Congratulations! Your application to become a vendor has been approved. You now have access to vendor tools.`
           : `Your vendor application was rejected. Reason: ${reason}`,
-        'system'
+        'approval',
+        status === 'approved' ? '/vendor' : '/dashboard?tab=vendor'
       );
       
       fetchVendorApplications();
@@ -1062,6 +1145,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         createdAt: serverTimestamp()
       });
       await addDoc(collection(db, 'investmentOpportunities'), newOpportunity);
+      
+      // Notify Admins
+      for (const admin of admins) {
+        await sendNotification(
+          admin.id,
+          'New Investment Opportunity',
+          `${currentUser.name} has created a new investment opportunity for ${data.productName}.`,
+          'approval',
+          '/admin?tab=investments'
+        );
+      }
+      
       fetchInvestmentOpportunities();
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, 'investmentOpportunities');
@@ -1097,6 +1192,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         await updateDoc(oppRef, {
           currentFunding: increment(tier.amount)
         });
+
+        // Notify Vendor
+        await sendNotification(
+          oppData.vendorId,
+          'New Investment Received',
+          `${currentUser.name} has invested ${formatPrice(tier.amount, 'USD')} in your opportunity for ${oppData.productName}.`,
+          'payment',
+          '/vendor'
+        );
       } catch (e) {
         handleFirestoreError(e, OperationType.UPDATE, `investmentOpportunities/${opportunityId}`);
       }
@@ -1279,12 +1383,46 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           
           try {
             await addDoc(collection(db, 'orders'), newOrder);
+            
+            // Notify member
+            await sendNotification(
+              member.customerId,
+              'Group Buy Completed!',
+              `The group buy for ${groupData.productName} is now complete! Your order has been created.`,
+              'order',
+              '/dashboard?tab=orders'
+            );
           } catch (e) {
             handleFirestoreError(e, OperationType.CREATE, 'orders');
-            // We don't throw here to allow other orders to be created, 
-            // but in a real app we might want more robust error handling
           }
         }
+
+        // Notify Vendor
+        await sendNotification(
+          groupData.vendorId,
+          'Group Buy Completed',
+          `The group buy for ${groupData.productName} has reached its target! ${newCount} orders have been created.`,
+          'order',
+          '/vendor?tab=orders'
+        );
+      } else {
+        // Notify Vendor of new member
+        await sendNotification(
+          groupData.vendorId,
+          'New Group Buy Member',
+          `${currentUser.name} has joined the group buy for ${groupData.productName}.`,
+          'order',
+          '/vendor'
+        );
+
+        // Notify current user
+        await sendNotification(
+          currentUser.id,
+          'Joined Group Buy',
+          `You have successfully joined the group buy for ${groupData.productName}.`,
+          'order',
+          '/dashboard?tab=groups'
+        );
       }
 
       fetchGroupPurchases();
@@ -1643,7 +1781,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       });
 
       try {
-        await addDoc(collection(db, 'orders'), newOrder);
+        const orderDoc = await addDoc(collection(db, 'orders'), newOrder);
+        
+        // Notify Vendor
+        await sendNotification(
+          vendorId,
+          'New Order Received',
+          `You have received a new order from ${currentUser.name}.`,
+          'order',
+          '/vendor?tab=orders'
+        );
       } catch (e) {
         handleFirestoreError(e, OperationType.WRITE, 'orders');
       }
@@ -1692,6 +1839,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         status,
         history: [...history, newHistoryItem]
       }));
+
+      // Notify Customer
+      await sendNotification(
+        orderSnap.data().customerId,
+        'Order Status Updated',
+        `Your order #${orderId.slice(0, 8).toUpperCase()} status has been updated to ${status}.`,
+        'order',
+        '/dashboard?tab=orders'
+      );
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `orders/${orderId}`);
     }
@@ -1782,15 +1938,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       await fetchGroupPurchases();
     } catch (e) {
       handleFirestoreError(e, OperationType.UPDATE, `groupPurchases/${groupId}`);
-    }
-  };
-
-  const markNotificationAsRead = async (id: string) => {
-    try {
-      await updateDoc(doc(db, 'notifications', id), { isRead: true });
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
-    } catch (e) {
-      handleFirestoreError(e, OperationType.UPDATE, `notifications/${id}`);
     }
   };
 
@@ -1900,6 +2047,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       } else {
         await setDoc(convRef, updateData);
       }
+
+      // Notify recipient
+      await sendNotification(
+        receiverId,
+        'New Message',
+        `You have a new message from ${currentUser.name}: "${content.length > 50 ? content.substring(0, 50) + '...' : content}"`,
+        'message',
+        currentUser.role === 'admin' ? '/admin?tab=messages' : 
+        currentUser.role === 'vendor' ? '/vendor?tab=messages' : '/dashboard?tab=messages'
+      );
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `conversations/${conversationId}`);
     }
@@ -2039,6 +2196,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       isAuthReady,
       notifications,
       markNotificationAsRead,
+      markAllNotificationsAsRead,
+      archiveNotification,
+      clearNotifications,
       conversations,
       activeMessages,
       activeChatUserId,
