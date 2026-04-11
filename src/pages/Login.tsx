@@ -64,20 +64,20 @@ export default function Login() {
     
     try {
       if (isForgotPasswordMode) {
-        await resetPassword(formData.email);
+        await resetPassword(formData.email.trim());
         setResetSent(true);
         return;
       }
 
       if (isLoginMode) {
-        await login(formData.email, formData.password);
+        await login(formData.email.trim(), formData.password);
       } else {
         // Signup mode
         if (role === 'admin' && formData.adminSecret !== 'HALAL_ADMIN_2026') {
           throw new Error("Invalid admin secret key.");
         }
 
-        await signup(formData.email, formData.password, {
+        await signup(formData.email.trim(), formData.password, {
           name: formData.name,
           role: role,
           storeName: role === 'vendor' ? (formData.storeName || `${formData.name}'s Store`) : undefined,
@@ -87,14 +87,16 @@ export default function Login() {
       setIsAuthenticating(true);
     } catch (err: any) {
       console.error("Auth error:", err);
-      if (err.code === 'auth/email-already-in-use') {
+      const errorCode = err.code || (err.message?.includes('auth/invalid-credential') ? 'auth/invalid-credential' : null);
+      
+      if (errorCode === 'auth/email-already-in-use') {
         setError("This email is already registered. Please sign in instead.");
-      } else if (err.code === 'auth/invalid-credential') {
-        setError("Invalid email or password. Please try again.");
-      } else if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
-        setError("Invalid email or password. Please try again.");
-      } else if (err.code === 'auth/too-many-requests') {
+      } else if (errorCode === 'auth/invalid-credential' || errorCode === 'auth/user-not-found' || errorCode === 'auth/wrong-password') {
+        setError("Invalid email or password. Please check your credentials and try again, or sign up if you don't have an account.");
+      } else if (errorCode === 'auth/too-many-requests') {
         setError("Too many failed login attempts. Please try again later.");
+      } else if (errorCode === 'auth/network-request-failed') {
+        setError("Network error. Please check your internet connection.");
       } else {
         setError(err.message || "An error occurred during authentication.");
       }
@@ -111,14 +113,16 @@ export default function Login() {
       setIsAuthenticating(true);
     } catch (err: any) {
       console.error("Google Auth error:", err);
-      if (err.code === 'auth/popup-closed-by-user') {
+      const errorCode = err.code || (err.message?.includes('auth/invalid-credential') ? 'auth/invalid-credential' : null);
+
+      if (errorCode === 'auth/popup-closed-by-user') {
         setError("The sign-in popup was closed before completion. Please try again.");
-      } else if (err.code === 'auth/cancelled-popup-request') {
+      } else if (errorCode === 'auth/cancelled-popup-request') {
         setError("Only one sign-in popup can be open at a time.");
-      } else if (err.code === 'auth/popup-blocked') {
+      } else if (errorCode === 'auth/popup-blocked') {
         setError("Sign-in popup was blocked by your browser. Please allow popups for this site.");
-      } else if (err.code === 'auth/invalid-credential') {
-        setError("Invalid credentials. Please try again.");
+      } else if (errorCode === 'auth/invalid-credential') {
+        setError("Authentication failed. This may be due to a configuration issue or the sign-in was interrupted.");
       } else {
         setError(err.message || "An error occurred during Google authentication.");
       }

@@ -9,47 +9,46 @@ service cloud.firestore {
     // Collection: users
     // Document ID: {userId} (matches auth.uid)
     // Fields:
-    //   - uid: string (required)
+    //   - id: string (required)
+    //   - name: string (required)
     //   - email: string (required, email format)
-    //   - displayName: string (optional)
-    //   - photoURL: string (optional)
-    //   - role: string (required, 'buyer' | 'seller' | 'admin')
+    //   - role: string (required, enum)
+    //   - status: string (required)
     //   - createdAt: timestamp (required)
     //
     // Collection: products
     // Document ID: {productId}
     // Fields:
-    //   - title: string (required, 1-100 chars)
-    //   - description: string (required, 1-1000 chars)
-    //   - price: number (required, > 0)
+    //   - id: string (required)
+    //   - vendorId: string (required, matches auth.uid)
+    //   - vendorName: string (required)
+    //   - name: string (required, 1-200 chars)
+    //   - description: string (required, 1-2000 chars)
+    //   - price: number (required, >= 0)
+    //   - currency: string (required)
     //   - category: string (required)
-    //   - image: string (required, valid URL)
-    //   - sellerId: string (required, matches auth.uid)
-    //   - sellerName: string (required)
+    //   - imageUrl: string (required, valid URL)
     //   - stock: number (required, >= 0)
-    //   - isHalal: bool (required)
+    //   - isHalalCertified: bool (required)
+    //   - availabilityScope: string (required, enum)
     //   - createdAt: timestamp (required)
     //
     // Collection: orders
     // Document ID: {orderId}
     // Fields:
-    //   - productId: string (required)
-    //   - productTitle: string (required)
-    //   - buyerId: string (required, matches auth.uid)
-    //   - sellerId: string (required)
-    //   - quantity: number (required, > 0)
-    //   - totalPrice: number (required, > 0)
+    //   - id: string (required)
+    //   - customerId: string (required, matches auth.uid)
+    //   - customerName: string (required)
+    //   - vendorId: string (required)
+    //   - vendorName: string (required)
     //   - status: string (required, enum)
-    //   - createdAt: timestamp (required)
-    //
-    // Collection: reviews
-    // Document ID: {reviewId}
-    // Fields:
-    //   - productId: string (required)
-    //   - userId: string (required, matches auth.uid)
-    //   - userName: string (required)
-    //   - rating: number (required, 1-5)
-    //   - comment: string (required, 1-500 chars)
+    //   - paymentStatus: string (required, enum)
+    //   - totalAmount: number (required, >= 0)
+    //   - currency: string (required)
+    //   - items: list (required)
+    //   - shippingDetails: map (required)
+    //   - paymentMethod: string (required)
+    //   - history: list (required)
     //   - createdAt: timestamp (required)
     //
     // ===============================================================
@@ -89,85 +88,75 @@ service cloud.firestore {
     }
 
     function isValidEmail(email) {
-      return email is string && email.matches("^[^@]+@[^@]+\\.[^@]+$");
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
     }
 
     function isValidUrl(url) {
       return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
     }
 
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
     // ===============================================================
-    // Validation Functions
+    // Domain Validators
     // ===============================================================
 
+    function isValidUser(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.role in ['buyer', 'seller', 'admin', 'vendor', 'customer', 'investor', 'moderator', 'support'] &&
+             data.status is string &&
+             (data.createdAt is timestamp || data.createdAt is string || data.createdAt == null);
+    }
+
     function isValidProduct(data) {
-      return data.keys().hasAll(['name', 'price', 'category', 'vendorId', 'stock', 'isHalalCertified', 'createdAt']) &&
+      return data.vendorId is string &&
+             data.vendorName is string &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
-             (!('description' in data) || (data.description is string && data.description.size() <= 2000)) &&
+             data.description is string && data.description.size() <= 5000 &&
              data.price is number && data.price >= 0 &&
-             data.vendorId is string &&
-             data.stock is number &&
+             data.currency is string &&
+             data.category is string &&
+             data.imageUrl is string && isValidUrl(data.imageUrl) &&
+             data.stock is number && data.stock >= 0 &&
              data.isHalalCertified is bool &&
+             data.availabilityScope in ['global', 'country', 'local'] &&
              (data.createdAt is timestamp || data.createdAt is string);
     }
 
     function isValidOrder(data) {
-      return data.keys().hasAll(['customerId', 'vendorId', 'items', 'totalAmount', 'currency', 'status', 'createdAt']) &&
-             data.totalAmount is number && data.totalAmount >= 0 &&
-             data.status in ['pending', 'processing', 'shipped', 'delivered', 'cancelled'] &&
-             data.items is list && data.items.size() > 0 &&
-             (data.createdAt is timestamp || data.createdAt is string);
+      return data.customerId is string &&
+             data.vendorId is string &&
+             data.status is string &&
+             (data.createdAt is timestamp || data.createdAt is string || data.createdAt == null);
     }
 
     function isValidReview(data) {
-      return data.keys().hasAll(['userId', 'rating', 'comment', 'createdAt']) &&
+      return data.userId is string &&
+             data.userName is string &&
              data.rating is number && data.rating >= 1 && data.rating <= 5 &&
-             data.comment is string && data.comment.size() <= 1000 &&
-             (data.createdAt is timestamp || data.createdAt is string);
-    }
-
-    function isValidGroupPurchase(data) {
-      return data.keys().hasAll(['productId', 'vendorId', 'targetMembers', 'currentMembers', 'status', 'members', 'price', 'currency', 'expiresAt', 'createdAt']) &&
-             data.productId is string &&
-             data.vendorId is string &&
-             data.targetMembers is number && data.targetMembers >= 1 &&
-             data.currentMembers is number && data.currentMembers >= 1 &&
-             data.price is number && data.price >= 0 &&
-             data.currency is string &&
-             data.status in ['open', 'completed', 'cancelled'] &&
-             data.members is list && data.members.size() >= 1 &&
-             (data.expiresAt is timestamp || data.expiresAt is string) &&
-             (data.createdAt is timestamp || data.createdAt is string);
-    }
-
-    function isRecent(time) {
-      return time is timestamp && 
-             time > request.time - duration.value(5, 'm') && 
-             time <= request.time;
+             data.comment is string && data.comment.size() <= 2000 &&
+             data.isVerifiedPurchase is bool &&
+             data.status in ['pending', 'approved', 'flagged'] &&
+             (data.createdAt is timestamp || data.createdAt is string || data.createdAt == null);
     }
 
     // ===============================================================
     // Rules
     // ===============================================================
 
-    function isValidUser(data) {
-      return data.email is string && isValidEmail(data.email) &&
-             data.role in ['buyer', 'seller', 'vendor', 'customer', 'investor', 'admin', 'moderator', 'support'] &&
-             (!('status' in data) || data.status is string) &&
-             (!('name' in data) || data.name is string) &&
-             (!('createdAt' in data) || data.createdAt is timestamp || data.createdAt is string);
-    }
-
     match /users/{userId} {
-      allow read: if (resource != null && resource.data.role in ['vendor', 'admin', 'support', 'moderator']) || 
-                   (isAuthenticated() && (isOwner(userId) || isAdmin()));
-      allow create: if isAuthenticated() && (
-        (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role != 'admin') || 
-        isSuperAdmin()
-      );
+      allow read: if (resource != null && resource.data.role in ['vendor', 'seller']) || (isAuthenticated() && (isOwner(userId) || isAdmin()));
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role != 'admin' || isSuperAdmin());
       allow update: if isAuthenticated() && (
         isSuperAdmin() ||
-        (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == resource.data.role) || 
+        (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == resource.data.role) ||
         (isFullAdmin() && isValidUser(request.resource.data))
       );
       allow delete: if isAuthenticated() && isSuperAdmin();
@@ -177,8 +166,9 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isAuthenticated() && isValidProduct(request.resource.data) && request.resource.data.vendorId == request.auth.uid;
       allow update: if isAuthenticated() && (
-        isAdmin() || 
+        isFullAdmin() ||
         (isOwner(resource.data.vendorId) && isValidProduct(request.resource.data)) ||
+        // Allow stock updates for orders
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock']))
       );
       allow delete: if isAuthenticated() && (isFullAdmin() || isOwner(resource.data.vendorId));
@@ -186,53 +176,45 @@ service cloud.firestore {
 
     match /orders/{orderId} {
       allow read: if isAuthenticated() && (isOwner(resource.data.customerId) || isOwner(resource.data.vendorId) || isAdmin());
-      allow create: if isAuthenticated() && isValidOrder(request.resource.data) && (isOwner(request.resource.data.customerId) || isAdmin());
+      allow create: if isAuthenticated() && isValidOrder(request.resource.data) && (
+        isOwner(request.resource.data.customerId) || 
+        isAdmin() ||
+        // Allow creating orders for group purchases (where one user might create for others)
+        (request.resource.data.groupPurchaseId != null)
+      );
       allow update: if isAuthenticated() && (
         isAdmin() ||
-        // Vendor can update status, history, and payment details
-        (isOwner(resource.data.vendorId) && 
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'history', 'paymentStatus', 'paymentReceipt'])) ||
-        // Customer can cancel pending order or upload payment receipt
+        (isOwner(resource.data.vendorId) && isValidOrder(request.resource.data)) ||
         (isOwner(resource.data.customerId) && (
+          // Allow cancellation
           (request.resource.data.status == 'cancelled' && resource.data.status == 'pending') ||
-          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'history', 'paymentStatus', 'paymentReceipt']) && 
-           request.resource.data.paymentStatus == 'receipt_uploaded')
+          // Allow receipt upload (updates status to processing)
+          (request.resource.data.diff(resource.data).affectedKeys().hasAny(['paymentStatus', 'paymentReceipt', 'status', 'history']))
         ))
       );
     }
 
     match /reviews/{reviewId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isValidReview(request.resource.data) && (
-        isOwner(request.resource.data.userId) || 
-        isAdmin()
-      );
+      allow create: if isAuthenticated() && isValidReview(request.resource.data) && isOwner(request.resource.data.userId);
       allow update: if isAuthenticated() && (isAdmin() || (isOwner(resource.data.userId) && isValidReview(request.resource.data)));
-      allow delete: if isAuthenticated() && (isFullAdmin() || isOwner(resource.data.userId));
+      allow delete: if isAuthenticated() && (isAdmin() || isOwner(resource.data.userId));
     }
 
     match /notifications/{notificationId} {
-      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
-      allow create: if isAuthenticated(); // App logic creates notifications
+      allow read: if isAuthenticated() && isOwner(resource.data.userId);
+      allow create: if isAuthenticated();
       allow update: if isAuthenticated() && isOwner(resource.data.userId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'isArchived']);
       allow delete: if isAuthenticated() && isOwner(resource.data.userId);
     }
 
     match /conversations/{conversationId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() ||
-        (resource != null && request.auth.uid in resource.data.participants) ||
-        conversationId.matches("^" + request.auth.uid + "_.*") || 
-        conversationId.matches(".*_" + request.auth.uid + "$")
-      );
+      allow read: if isAuthenticated() && (isAdmin() || request.auth.uid in resource.data.participants || conversationId.matches(".*" + request.auth.uid + ".*"));
       allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
       allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
-      
+
       match /messages/{messageId} {
-        allow read: if isAuthenticated() && (
-          conversationId.matches("^" + request.auth.uid + "_.*") || 
-          conversationId.matches(".*_" + request.auth.uid + "$")
-        );
+        allow read: if isAuthenticated() && (isAdmin() || request.auth.uid == resource.data.senderId || request.auth.uid == resource.data.receiverId);
         allow create: if isAuthenticated() && request.auth.uid == request.resource.data.senderId;
       }
     }
@@ -240,29 +222,20 @@ service cloud.firestore {
     match /subscriptions/{subscriptionId} {
       allow read: if isAuthenticated() && (isOwner(resource.data.customerId) || isOwner(resource.data.vendorId) || isAdmin());
       allow create: if isAuthenticated() && isOwner(request.resource.data.customerId);
-      allow update: if isAuthenticated() && (isOwner(resource.data.customerId) || isOwner(resource.data.vendorId));
-      allow delete: if isAuthenticated() && isOwner(resource.data.customerId);
+      allow update: if isAuthenticated() && (isOwner(resource.data.customerId) || isOwner(resource.data.vendorId) || isAdmin());
+      allow delete: if isAuthenticated() && (isOwner(resource.data.customerId) || isAdmin());
     }
 
     match /groupPurchases/{purchaseId} {
       allow read: if true;
-      allow create: if isAuthenticated() && isValidGroupPurchase(request.resource.data) && (
-        isOwner(request.resource.data.vendorId) || 
-        isAdmin() || 
-        request.resource.data.members[0].customerId == request.auth.uid
-      );
-      allow update: if isAuthenticated() && (
-        isAdmin() || 
-        isOwner(resource.data.vendorId) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'currentMembers', 'status']) && 
-         request.resource.data.members.size() > resource.data.members.size())
-      );
+      allow create: if isAuthenticated() && (isOwner(request.resource.data.vendorId) || isAdmin() || request.resource.data.members[0].customerId == request.auth.uid);
+      allow update: if isAuthenticated() && (isAdmin() || isOwner(resource.data.vendorId) || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'currentMembers', 'status'])));
     }
 
     match /investmentOpportunities/{opportunityId} {
       allow read: if true;
       allow create: if isAuthenticated() && (isOwner(request.resource.data.vendorId) || isAdmin());
-      allow update: if isAuthenticated(); // Investors can fund
+      allow update: if isAuthenticated();
     }
 
     match /investments/{investmentId} {
@@ -272,27 +245,25 @@ service cloud.firestore {
     }
 
     match /investorWallets/{userId} {
-      allow read: if isAuthenticated() && isOwner(userId);
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
       allow create: if isAuthenticated() && isOwner(userId);
-      allow update: if isAuthenticated() && isOwner(userId);
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin());
     }
 
     match /vendorApplications/{applicationId} {
-      allow read: if isAuthenticated() && (
-        isAdmin() || 
-        resource.data.userId == request.auth.uid
-      );
-      allow create: if isAuthenticated() && 
-        request.resource.data.userId == request.auth.uid &&
-        request.resource.data.status == 'pending';
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+      allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
+      allow update: if isAuthenticated() && isAdmin();
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
     }
 
     match /auditLogs/{logId} {
       allow read: if isAuthenticated() && isAdmin();
       allow create: if isAuthenticated() && isAdmin();
-      allow update, delete: if false;
     }
 
     match /{path=**} {

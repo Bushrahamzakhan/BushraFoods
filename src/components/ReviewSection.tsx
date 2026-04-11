@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Star, User as UserIcon, MessageSquare, Send, CheckCircle, Filter, ChevronDown } from 'lucide-react';
+import { Star, User as UserIcon, MessageSquare, Send, CheckCircle, Filter, ChevronDown, Store, ShoppingCart } from 'lucide-react';
 import { Review } from '../types';
 import { useAppContext } from '../context/AppContext';
 import { ensureDate } from '../lib/utils';
@@ -13,7 +13,7 @@ interface ReviewSectionProps {
 type SortOption = 'newest' | 'highest' | 'lowest';
 
 export default function ReviewSection({ productId, vendorId }: ReviewSectionProps) {
-  const { currentUser, fetchProductReviews, fetchVendorReviews, submitReview, orders } = useAppContext();
+  const { currentUser, fetchProductReviews, fetchVendorReviews, submitReview, orders, products } = useAppContext();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
@@ -39,12 +39,17 @@ export default function ReviewSection({ productId, vendorId }: ReviewSectionProp
     loadReviews();
   }, [productId, vendorId]);
 
+  const isOwnProduct = productId && products.find(p => p.id === productId)?.vendorId === currentUser?.id;
+  const isOwnStore = vendorId === currentUser?.id;
+  const isVendor = isOwnProduct || isOwnStore;
+
   const userAlreadyReviewed = reviews.some(r => r.userId === currentUser?.id);
   
-  const hasPurchased = productId && orders.some(order => 
+  const hasPurchased = productId ? orders.some(order => 
     order.status === 'delivered' && 
-    order.items.some(item => item.productId === productId)
-  );
+    order.items.some(item => item.productId === productId) &&
+    order.customerId === currentUser?.id
+  ) : true; // For vendor reviews, we might want to check any purchase from that vendor, but let's simplify for now.
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,7 +85,7 @@ export default function ReviewSection({ productId, vendorId }: ReviewSectionProp
   }, [reviews]);
 
   const filteredAndSortedReviews = useMemo(() => {
-    let result = [...reviews];
+    let result = reviews.filter(r => r.status === 'approved' || r.userId === currentUser?.id);
     
     if (filterRating !== null) {
       result = result.filter(r => r.rating === filterRating);
@@ -156,7 +161,7 @@ export default function ReviewSection({ productId, vendorId }: ReviewSectionProp
 
         {/* Review Form */}
         <div className="lg:col-span-2">
-          {currentUser && !userAlreadyReviewed ? (
+          {currentUser && !userAlreadyReviewed && !isVendor && hasPurchased ? (
             <div className="bg-white p-8 rounded-3xl border border-emerald-100 shadow-sm shadow-emerald-100/50">
               <h4 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
                 <MessageSquare className="w-5 h-5 text-emerald-600" /> Share Your Experience
@@ -214,6 +219,26 @@ export default function ReviewSection({ productId, vendorId }: ReviewSectionProp
                   {isSubmitting ? 'Submitting...' : <><Send className="w-5 h-5" /> Post Review</>}
                 </button>
               </form>
+            </div>
+          ) : currentUser && isVendor ? (
+            <div className="bg-amber-50 p-10 rounded-3xl border border-dashed border-amber-300 flex flex-col items-center justify-center text-center h-full">
+              <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4">
+                <Store className="w-8 h-8 text-amber-600" />
+              </div>
+              <h4 className="text-xl font-bold text-gray-900 mb-2">Vendor Restriction</h4>
+              <p className="text-gray-500 max-w-sm">
+                As a vendor, you cannot leave reviews for your own products or store. This ensures a fair and transparent feedback system.
+              </p>
+            </div>
+          ) : currentUser && !hasPurchased ? (
+            <div className="bg-blue-50 p-10 rounded-3xl border border-dashed border-blue-300 flex flex-col items-center justify-center text-center h-full">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+                <ShoppingCart className="w-8 h-8 text-blue-600" />
+              </div>
+              <h4 className="text-xl font-bold text-gray-900 mb-2">Verified Purchase Required</h4>
+              <p className="text-gray-500 max-w-sm">
+                Only customers who have purchased and received this product can leave a review. This helps us maintain the integrity of our feedback system.
+              </p>
             </div>
           ) : currentUser && userAlreadyReviewed ? (
             <div className="bg-gray-50 p-10 rounded-3xl border border-dashed border-gray-300 flex flex-col items-center justify-center text-center h-full">

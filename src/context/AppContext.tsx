@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
-import { User, Product, CartItem, Order, OrderStatus, ShippingDetails, PaymentMethod, SUPPORTED_CURRENCIES, Notification, ChatMessage, ChatConversation, Review, Subscription, GroupPurchase, InvestmentOpportunity, Investment, InvestorWallet, Role, AuditLog, PaymentMethodType, VendorPaymentMethod, PaymentReceipt, PaymentStatus, VendorApplication } from '../types';
+import { User, Product, CartItem, Order, OrderStatus, ShippingDetails, PaymentMethod, SUPPORTED_CURRENCIES, Notification, ChatMessage, ChatConversation, Review, Subscription, GroupPurchase, InvestmentOpportunity, Investment, InvestorWallet, Role, AuditLog, PaymentMethodType, VendorPaymentMethod, PaymentReceipt, PaymentStatus, VendorApplication, Category } from '../types';
 import { ensureDate } from '../lib/utils';
 import { auth, db, storage } from '../firebase';
 import { 
@@ -170,7 +170,7 @@ interface AppContextType {
   removeFromCart: (productId: string, selectedVariations?: Record<string, string>) => void;
   clearCart: () => void;
   orders: Order[];
-  placeOrder: (shippingDetails: ShippingDetails, paymentMethods: Record<string, PaymentMethodType>) => Promise<void>;
+  placeOrder: (shippingDetails: ShippingDetails, paymentMethods: Record<string, PaymentMethodType>) => Promise<Order[]>;
   updateOrderStatus: (orderId: string, status: OrderStatus, description?: string) => Promise<void>;
   vendors: User[];
   admins: User[];
@@ -200,6 +200,7 @@ interface AppContextType {
   deleteUserAdmin: (id: string) => Promise<void>;
   deleteProductAdmin: (id: string) => Promise<void>;
   deleteReviewAdmin: (id: string) => Promise<void>;
+  updateReviewStatusAdmin: (id: string, status: 'approved' | 'flagged' | 'pending') => Promise<void>;
   updateOrderStatusAdmin: (orderId: string, status: OrderStatus, description?: string) => Promise<void>;
   cancelGroupPurchaseAdmin: (groupId: string) => Promise<void>;
   uploadImage: (file: File, folder: string, onProgress?: (progress: number) => void) => Promise<string>;
@@ -251,6 +252,10 @@ interface AppContextType {
   withdrawEarnings: (amount: number) => Promise<void>;
   userLocation: { country: string, city: string };
   setUserLocation: (location: { country: string, city: string }) => void;
+  categories: Category[];
+  addCategory: (category: Omit<Category, 'id' | 'createdAt'>) => Promise<void>;
+  updateCategory: (category: Category) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -272,6 +277,71 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const saved = localStorage.getItem('userLocation');
     return saved ? JSON.parse(saved) : { country: '', city: '' };
   });
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  // Category Listener and Seeder
+  useEffect(() => {
+    const unsubscribe = onSnapshot(query(collection(db, 'categories'), orderBy('order', 'asc')), async (snapshot) => {
+      if (snapshot.empty && (currentUser?.role === 'admin' || currentUser?.email === 'bushraanwar854@gmail.com')) {
+        // Seed categories if empty
+        const initialCategories = [
+          { name: 'Bakery', icon: 'Croissant', order: 1, isActive: true },
+          { name: 'Snacks', icon: 'Cookie', order: 2, isActive: true },
+          { name: 'Frozen', icon: 'IceCream', order: 3, isActive: true },
+          { name: 'Dairy', icon: 'Milk', order: 4, isActive: true },
+          { name: 'Meat', icon: 'Beef', order: 5, isActive: true },
+          { name: 'Beverages', icon: 'Coffee', order: 6, isActive: true },
+          { name: 'Seafood', icon: 'Fish', order: 7, isActive: true },
+          { name: 'Spices', icon: 'Flame', order: 8, isActive: true },
+          { name: 'Fresh Items', icon: 'Apple', order: 9, isActive: true },
+          { name: 'Rice', icon: 'Wheat', order: 10, isActive: true },
+          { name: 'Grains', icon: 'Sprout', order: 11, isActive: true },
+          { name: 'Cereals', icon: 'Bowl', order: 12, isActive: true },
+        ];
+
+        for (const cat of initialCategories) {
+          await addDoc(collection(db, 'categories'), {
+            ...cat,
+            createdAt: serverTimestamp()
+          });
+        }
+      } else {
+        setCategories(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category)));
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'categories');
+    });
+
+    return () => unsubscribe();
+  }, [currentUser?.id, currentUser?.role]);
+
+  const addCategory = async (category: Omit<Category, 'id' | 'createdAt'>) => {
+    try {
+      await addDoc(collection(db, 'categories'), cleanData({
+        ...category,
+        createdAt: serverTimestamp()
+      }));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, 'categories');
+    }
+  };
+
+  const updateCategory = async (category: Category) => {
+    try {
+      const { id, ...data } = category;
+      await updateDoc(doc(db, 'categories', id), cleanData(data));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `categories/${category.id}`);
+    }
+  };
+
+  const deleteCategory = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'categories', id));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `categories/${id}`);
+    }
+  };
 
   // Firebase Auth Listener
   useEffect(() => {
@@ -600,7 +670,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         history: arrayUnion({
           id: Math.random().toString(36).substr(2, 9),
           status: 'processing',
-          description: 'Payment receipt uploaded. Awaiting vendor review.',
+          description: 'Payment receipt uploaded. Awaiting vendor confirmation.',
           timestamp: ensureDate(new Date()).toISOString()
         })
       });
@@ -969,6 +1039,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       fetchAdminReviews();
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `reviews/${id}`);
+    }
+  };
+
+  const updateReviewStatusAdmin = async (id: string, status: 'approved' | 'flagged' | 'pending') => {
+    if (currentUser?.role !== 'admin' && currentUser?.email !== 'bushraanwar854@gmail.com') return;
+    try {
+      await updateDoc(doc(db, 'reviews', id), { status });
+      fetchAdminReviews();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `reviews/${id}`);
     }
   };
 
@@ -1456,12 +1536,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       handleFirestoreError(error, OperationType.LIST, 'users');
     });
 
-    const unsubAdmins = onSnapshot(query(collection(db, 'users'), where('role', 'in', ['admin', 'support', 'moderator'])), (snapshot) => {
-      setAdmins(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'users');
-    });
-
+    let unsubAdmins: () => void;
     let unsubOrders: () => void;
     let unsubNotifications: () => void;
     let unsubConversations: () => void;
@@ -1559,12 +1634,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           handleFirestoreError(error, OperationType.LIST, 'vendorApplications');
         }
       });
+
+      if (currentUser.role === 'admin' || currentUser.email === 'bushraanwar854@gmail.com') {
+        unsubAdmins = onSnapshot(query(collection(db, 'users'), where('role', 'in', ['admin', 'support', 'moderator'])), (snapshot) => {
+          setAdmins(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
+        }, (error) => {
+          if (auth.currentUser) {
+            handleFirestoreError(error, OperationType.LIST, 'users');
+          }
+        });
+      }
     }
 
     return () => {
       unsubProducts();
       unsubVendors();
-      unsubAdmins();
+      unsubAdmins?.();
       unsubOrders?.();
       unsubNotifications?.();
       unsubConversations?.();
@@ -1727,7 +1812,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const clearCart = () => setCart([]);
 
   const placeOrder = async (shippingDetails: ShippingDetails, paymentMethods: Record<string, PaymentMethodType>) => {
-    if (!currentUser || cart.length === 0) return;
+    if (!currentUser || cart.length === 0) return [];
+
+    const createdOrders: Order[] = [];
 
     // Group cart items by vendor
     const itemsByVendor = cart.reduce((acc, item) => {
@@ -1758,7 +1845,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         imageUrl: item.product.imageUrl
       }));
 
-      const newOrder = cleanData({
+      const newOrderData = {
         customerId: currentUser.id,
         customerName: currentUser.name,
         vendorId,
@@ -1769,19 +1856,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         shippingDetails,
         paymentMethod,
         vendorPaymentDetails,
-        status: 'pending',
-        paymentStatus: 'pending',
+        status: 'pending' as OrderStatus,
+        paymentStatus: 'pending' as PaymentStatus,
         history: [{
           id: Math.random().toString(36).substr(2, 9),
-          status: 'pending',
+          status: 'pending' as OrderStatus,
           description: `Order placed successfully. Awaiting payment via ${paymentMethod}.`,
           timestamp: ensureDate(new Date()).toISOString()
         }],
         createdAt: serverTimestamp()
-      });
+      };
 
       try {
-        const orderDoc = await addDoc(collection(db, 'orders'), newOrder);
+        const orderDoc = await addDoc(collection(db, 'orders'), cleanData(newOrderData));
+        
+        createdOrders.push({
+          id: orderDoc.id,
+          ...newOrderData,
+          createdAt: new Date().toISOString()
+        } as unknown as Order);
         
         // Notify Vendor
         await sendNotification(
@@ -1813,6 +1906,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (currentUser) {
       await updateUserProfile({ lastShippingDetails: shippingDetails });
     }
+
+    return createdOrders;
   };
 
   const updateOrderStatus = async (orderId: string, status: OrderStatus, description?: string) => {
@@ -2063,46 +2158,85 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const submitReview = async (review: { productId?: string, vendorId?: string, rating: number, comment: string }) => {
-    if (!currentUser) return;
+    if (!currentUser) throw new Error('You must be logged in to submit a review');
+
+    // Vendor Restriction: Cannot review own product/store
+    if (review.productId) {
+      const product = products.find(p => p.id === review.productId);
+      if (product && product.vendorId === currentUser.id) {
+        throw new Error('Vendors cannot review their own products');
+      }
+    }
+    if (review.vendorId === currentUser.id) {
+      throw new Error('Vendors cannot review their own store');
+    }
+
+    // Purchase Requirement: Must have purchased the product
+    let isVerifiedPurchase = false;
+    if (review.productId) {
+      const deliveredOrder = orders.find(o => 
+        o.customerId === currentUser.id && 
+        o.status === 'delivered' && 
+        o.items.some(item => item.productId === review.productId)
+      );
+      if (!deliveredOrder) {
+        throw new Error('You must purchase and receive the product before leaving a review');
+      }
+      isVerifiedPurchase = true;
+    }
+
     try {
       const newReview = cleanData({
         ...review,
         userId: currentUser.id,
         userName: currentUser.name,
         userProfileImage: currentUser.profileImage || '',
-        isVerifiedPurchase: true, // Simplified
+        isVerifiedPurchase,
+        status: 'approved' as const, // Set to approved immediately for visibility
         createdAt: serverTimestamp()
       });
-      try {
-        await addDoc(collection(db, 'reviews'), newReview);
-      } catch (e) {
-        handleFirestoreError(e, OperationType.WRITE, 'reviews');
-      }
       
-      // Update product/vendor rating
+      const reviewDoc = await addDoc(collection(db, 'reviews'), newReview);
+      
+      // Update product/vendor rating (only if approved, but we'll do it now for simplicity or wait for approval)
+      // Requirement says "Visibility of Ratings and Reviews: All ratings and reviews... must be visible"
+      // If we want them visible immediately but moderated later, we can set status to 'approved' by default
+      // Let's set to 'approved' by default for verified purchases, 'pending' otherwise (if we allowed non-verified, but we don't)
+      // Actually, let's stick to 'approved' for verified purchases to ensure immediate visibility as requested.
+      
+      await updateDoc(doc(db, 'reviews', reviewDoc.id), { status: 'approved' });
+
       if (review.productId) {
         const productRef = doc(db, 'products', review.productId);
-        try {
-          const productSnap = await getDoc(productRef);
-          if (productSnap.exists()) {
-            const data = productSnap.data();
-            const newCount = (data.reviewCount || 0) + 1;
-            const newRating = ((data.rating || 0) * (data.reviewCount || 0) + review.rating) / newCount;
-            try {
-              await updateDoc(productRef, {
-                rating: newRating,
-                reviewCount: newCount
-              });
-            } catch (e) {
-              handleFirestoreError(e, OperationType.UPDATE, `products/${review.productId}`);
-            }
-          }
-        } catch (e) {
-          handleFirestoreError(e, OperationType.GET, `products/${review.productId}`);
+        const productSnap = await getDoc(productRef);
+        if (productSnap.exists()) {
+          const data = productSnap.data();
+          const newCount = (data.reviewCount || 0) + 1;
+          const newRating = ((data.rating || 0) * (data.reviewCount || 0) + review.rating) / newCount;
+          await updateDoc(productRef, {
+            rating: newRating,
+            reviewCount: newCount
+          });
+        }
+      }
+
+      // Also update vendor rating if applicable
+      const vId = review.vendorId || (review.productId ? products.find(p => p.id === review.productId)?.vendorId : null);
+      if (vId) {
+        const vendorRef = doc(db, 'users', vId);
+        const vendorSnap = await getDoc(vendorRef);
+        if (vendorSnap.exists()) {
+          const data = vendorSnap.data();
+          const newCount = (data.reviewCount || 0) + 1;
+          const newRating = ((data.rating || 0) * (data.reviewCount || 0) + review.rating) / newCount;
+          await updateDoc(vendorRef, {
+            rating: newRating,
+            reviewCount: newCount
+          });
         }
       }
     } catch (e) {
-      console.error(e);
+      handleFirestoreError(e, OperationType.WRITE, 'reviews');
     }
   };
 
@@ -2180,6 +2314,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       deleteUserAdmin,
       deleteProductAdmin,
       deleteReviewAdmin,
+      updateReviewStatusAdmin,
       updateOrderStatusAdmin,
       cancelGroupPurchaseAdmin,
       uploadImage,
@@ -2231,7 +2366,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       vendorInvestments,
       updatePassword,
       userLocation,
-      setUserLocation
+      setUserLocation,
+      categories,
+      addCategory,
+      updateCategory,
+      deleteCategory
     }}>
       {children}
     </AppContext.Provider>

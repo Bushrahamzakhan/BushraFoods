@@ -21,6 +21,7 @@ export const SUPPORTED_CURRENCIES = [
   { code: 'EUR', symbol: '€', name: 'Euro' },
   { code: 'GBP', symbol: '£', name: 'British Pound' },
   { code: 'PKR', symbol: 'Rs', name: 'Pakistani Rupee' },
+  { code: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
   { code: 'AED', symbol: 'د.إ', name: 'UAE Dirham' },
   { code: 'SAR', symbol: '﷼', name: 'Saudi Riyal' },
   { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
@@ -29,6 +30,16 @@ export const SUPPORTED_CURRENCIES = [
   { code: 'MYR', symbol: 'RM', name: 'Malaysian Ringgit' },
   { code: 'IDR', symbol: 'Rp', name: 'Indonesian Rupiah' },
 ];
+
+export interface Category {
+  id: string;
+  name: string;
+  icon?: string;
+  description?: string;
+  order?: number;
+  isActive: boolean;
+  createdAt: string | Timestamp;
+}
 
 export interface User {
   id: string;
@@ -200,6 +211,8 @@ export interface Review {
   rating: number;
   comment: string;
   isVerifiedPurchase: boolean;
+  status: 'pending' | 'approved' | 'flagged';
+  images?: string[];
   createdAt: string | Timestamp;
 }
 

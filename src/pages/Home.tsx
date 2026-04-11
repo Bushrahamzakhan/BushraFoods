@@ -14,10 +14,13 @@ const CATEGORY_ICONS: Record<string, { icon: React.ReactNode, color: string, bg:
   'Seafood': { icon: <span className="text-2xl">🐟</span>, color: 'text-teal-600', bg: 'bg-teal-100' },
   'Spices': { icon: <span className="text-2xl">🌶️</span>, color: 'text-rose-600', bg: 'bg-rose-100' },
   'Fresh Items': { icon: <span className="text-2xl">🥬</span>, color: 'text-green-600', bg: 'bg-green-100' },
+  'Rice': { icon: <span className="text-2xl">🍚</span>, color: 'text-yellow-600', bg: 'bg-yellow-100' },
+  'Grains': { icon: <span className="text-2xl">🌾</span>, color: 'text-amber-700', bg: 'bg-amber-50' },
+  'Cereals': { icon: <span className="text-2xl">🥣</span>, color: 'text-orange-500', bg: 'bg-orange-50' },
 };
 
 export default function Home() {
-  const { products, addToCart, formatPrice, userLocation, setUserLocation, loading } = useAppContext();
+  const { products, addToCart, formatPrice, userLocation, setUserLocation, loading, categories: dynamicCategories } = useAppContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialSearchTerm = searchParams.get('search') || '';
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
@@ -106,7 +109,7 @@ export default function Home() {
     }
   };
 
-  const categories = ['All', ...CATEGORIES];
+  const categories = ['All', ...dynamicCategories.filter(c => c.isActive).sort((a, b) => a.order - b.order).map(c => c.name)];
   const countries = ['All Countries', ...COUNTRIES];
   const freshnessOptions = [
     { label: 'All', value: '' },
@@ -206,14 +209,38 @@ export default function Home() {
         </div>
         
         <div className="flex overflow-x-auto pb-4 gap-4 scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-5 md:grid-cols-10">
-          {categories.map(cat => {
-            const config = CATEGORY_ICONS[cat] || { icon: <Globe2 className="w-6 h-6" />, color: 'text-gray-600', bg: 'bg-gray-100' };
-            const isActive = selectedCategory === cat;
+          <button
+            onClick={() => setSelectedCategory('All')}
+            className={`flex flex-col items-center gap-3 p-4 rounded-2xl border transition-all duration-300 group min-w-[100px] sm:min-w-0 ${
+              selectedCategory === 'All' 
+                ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-100 -translate-y-1' 
+                : 'bg-white border-gray-100 text-gray-600 hover:border-emerald-200 hover:shadow-md hover:-translate-y-1'
+            }`}
+          >
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${
+              selectedCategory === 'All' ? 'bg-white/20' : 'bg-gray-100'
+            }`}>
+              <span className={selectedCategory === 'All' ? 'text-white' : ''}>
+                <Globe2 className="w-6 h-6" />
+              </span>
+            </div>
+            <span className={`text-[10px] font-bold text-center uppercase tracking-wider ${selectedCategory === 'All' ? 'text-white' : 'text-gray-700 group-hover:text-emerald-600'}`}>
+              All
+            </span>
+          </button>
+
+          {dynamicCategories.filter(c => c.isActive).sort((a, b) => a.order - b.order).map(cat => {
+            const config = CATEGORY_ICONS[cat.name] || { 
+              icon: <span className="text-2xl">{cat.icon || '📦'}</span>, 
+              color: 'text-gray-600', 
+              bg: 'bg-gray-100' 
+            };
+            const isActive = selectedCategory === cat.name;
             
             return (
               <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
+                key={cat.id}
+                onClick={() => setSelectedCategory(cat.name)}
                 className={`flex flex-col items-center gap-3 p-4 rounded-2xl border transition-all duration-300 group min-w-[100px] sm:min-w-0 ${
                   isActive 
                     ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-100 -translate-y-1' 
@@ -226,7 +253,7 @@ export default function Home() {
                   <span className={isActive ? 'text-white' : ''}>{config.icon}</span>
                 </div>
                 <span className={`text-[10px] font-bold text-center uppercase tracking-wider ${isActive ? 'text-white' : 'text-gray-700 group-hover:text-emerald-600'}`}>
-                  {cat}
+                  {cat.name}
                 </span>
               </button>
             );

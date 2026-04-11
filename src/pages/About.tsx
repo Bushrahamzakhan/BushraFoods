@@ -36,7 +36,7 @@ export default function About() {
         <div className="relative rounded-3xl overflow-hidden shadow-xl">
           <img 
             src="https://picsum.photos/seed/halal/800/600" 
-            alt="Halal Market Team" 
+            alt="Halal Market Online Team" 
             className="w-full h-full object-cover"
             referrerPolicy="no-referrer"
           />

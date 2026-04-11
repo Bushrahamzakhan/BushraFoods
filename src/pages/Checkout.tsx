@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { CheckCircle, CreditCard, Truck, MapPin, Banknote, QrCode, Building2, Wallet, HelpCircle, MessageSquare } from 'lucide-react';
-import { PaymentMethodType, ShippingDetails, User, CartItem } from '../types';
+import { CheckCircle, CreditCard, Truck, MapPin, Banknote, QrCode, Building2, Wallet, HelpCircle, MessageSquare, Upload, ShoppingBag, RefreshCw } from 'lucide-react';
+import { PaymentMethodType, ShippingDetails, User, CartItem, Order } from '../types';
+import PaymentReceiptUpload from '../components/PaymentReceiptUpload';
 
 export default function Checkout() {
   const { cart, placeOrder, currentUser, formatPrice, getCartTotal, vendors } = useAppContext();
   const navigate = useNavigate();
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [vendorPaymentMethods, setVendorPaymentMethods] = useState<Record<string, PaymentMethodType>>({});
 
   const totalAmount = getCartTotal();
+
+  const [vendorPaymentMethods, setVendorPaymentMethods] = useState<Record<string, PaymentMethodType>>({});
 
   // Group cart items by vendor
   const vendorGroups = cart.reduce((groups, item) => {
@@ -58,8 +60,14 @@ export default function Checkout() {
     cvv: ''
   });
 
-  if (cart.length === 0 && !isSuccess) {
-    navigate('/cart');
+  // Redirect if cart is empty
+  useEffect(() => {
+    if (cart.length === 0 && !isProcessing && !isSuccess) {
+      navigate('/cart');
+    }
+  }, [cart.length, isProcessing, isSuccess, navigate]);
+
+  if (cart.length === 0 && !isProcessing && !isSuccess) {
     return null;
   }
 
@@ -89,40 +97,21 @@ export default function Checkout() {
     };
 
     // Simulate payment processing
-    setTimeout(() => {
-      placeOrder(shippingDetails, vendorPaymentMethods);
-      setIsProcessing(false);
+    setTimeout(async () => {
+      const orders = await placeOrder(shippingDetails, vendorPaymentMethods);
       setIsSuccess(true);
+      setIsProcessing(false);
+      
+      // Automatically redirect to Pending Payments Orders page
+      navigate('/customer', { 
+        state: { 
+          activeTab: 'orders', 
+          statusFilter: 'pending',
+          triggerReceiptUpload: orders.some(o => o.paymentMethod !== 'card')
+        } 
+      });
     }, 2000);
   };
-
-  if (isSuccess) {
-    return (
-      <div className="max-w-2xl mx-auto text-center py-20 bg-white rounded-2xl shadow-sm border border-gray-100">
-        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-          <CheckCircle className="w-10 h-10 text-green-600" />
-        </div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">Order Confirmed!</h1>
-        <p className="text-gray-600 mb-8 text-lg">
-          Thank you for shopping with Halal Market Online. Your order has been placed successfully and is being processed.
-        </p>
-        <div className="flex gap-4 justify-center">
-          <button 
-            onClick={() => navigate('/customer')}
-            className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors shadow-md"
-          >
-            View My Orders
-          </button>
-          <button 
-            onClick={() => navigate('/')}
-            className="bg-white text-green-700 border border-green-200 px-6 py-3 rounded-lg font-semibold hover:bg-green-50 transition-colors shadow-sm"
-          >
-            Continue Shopping
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="max-w-6xl mx-auto">

@@ -11,21 +11,22 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell
 } from 'recharts';
-import { OrderStatus, PaymentStatus } from '../types';
+import { OrderStatus, PaymentStatus, Category } from '../types';
 import { ensureDate } from '../lib/utils';
 import ChatList from '../components/chat/ChatList';
 import ChatWindow from '../components/chat/ChatWindow';
 
-type AdminTab = 'overview' | 'vendors' | 'products' | 'orders' | 'customers' | 'investments' | 'group-buys' | 'reviews' | 'audit' | 'admins' | 'payments' | 'messages' | 'vendor-applications';
+type AdminTab = 'overview' | 'vendor-applications' | 'vendors' | 'products' | 'categories' | 'orders' | 'customers' | 'investments' | 'group-buys' | 'reviews' | 'audit' | 'admins' | 'payments' | 'messages';
 
 export default function AdminDashboard() {
   const { 
     currentUser, adminStats, adminVendors, adminProducts, adminOrders, adminCustomers, adminInvestments, adminReviews, auditLogs,
     groupPurchases, fetchGroupPurchases,
     fetchAdminStats, fetchAdminVendors, fetchAdminProducts, fetchAdminOrders, fetchAdminCustomers, fetchAdminInvestments, fetchAdminReviews, fetchAuditLogs,
-    updateVendorStatus, deleteUserAdmin, deleteProductAdmin, deleteReviewAdmin, updateOrderStatusAdmin, recalculateTopRated, formatPrice,
+    updateVendorStatus, deleteUserAdmin, deleteProductAdmin, deleteReviewAdmin, updateReviewStatusAdmin, updateOrderStatusAdmin, recalculateTopRated, formatPrice,
     updateUserRole, updateUserStatus, cancelGroupPurchaseAdmin,
-    vendorApplications, reviewVendorApplication
+    vendorApplications, reviewVendorApplication,
+    categories, addCategory, updateCategory, deleteCategory
   } = useAppContext();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
@@ -34,6 +35,9 @@ export default function AdminDashboard() {
   const [viewingReceiptUrl, setViewingReceiptUrl] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [rejectingAppId, setRejectingAppId] = useState<string | null>(null);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategory, setNewCategory] = useState({ name: '', icon: '', order: 0, isActive: true });
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -214,7 +218,7 @@ export default function AdminDashboard() {
         </div>
         
         <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
-          {(['overview', 'vendor-applications', 'vendors', 'products', 'orders', 'customers', 'investments', 'group-buys', 'reviews', 'audit', 'admins'] as AdminTab[]).map((tab) => {
+          {(['overview', 'vendor-applications', 'vendors', 'products', 'categories', 'orders', 'customers', 'investments', 'group-buys', 'reviews', 'audit', 'admins'] as AdminTab[]).map((tab) => {
             if (tab === 'admins' && !isSuperAdmin) return null;
             return (
               <button
@@ -765,6 +769,152 @@ export default function AdminDashboard() {
               </table>
             )}
 
+            {activeTab === 'categories' && (
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-lg font-bold text-gray-900">Manage Product Categories</h3>
+                  <button 
+                    onClick={() => setIsAddingCategory(true)}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-md flex items-center gap-2"
+                  >
+                    <Package className="w-4 h-4" /> Add Category
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {categories.map(category => (
+                    <div key={category.id} className="bg-gray-50 rounded-2xl p-4 border border-gray-100 flex items-center justify-between group">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-emerald-600 text-2xl">
+                          {category.icon || <Package className="w-6 h-6" />}
+                        </div>
+                        <div>
+                          <p className="font-bold text-gray-900">{category.name}</p>
+                          <p className="text-xs text-gray-500">Order: {category.order} • {category.isActive ? 'Active' : 'Inactive'}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={() => setEditingCategory(category)}
+                          className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setConfirmModal({
+                              isOpen: true,
+                              title: 'Delete Category?',
+                              message: `Are you sure you want to delete "${category.name}"? This might affect products assigned to it.`,
+                              onConfirm: async () => {
+                                await deleteCategory(category.id);
+                                showSuccess(`Category ${category.name} deleted.`);
+                                setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                              }
+                            });
+                          }}
+                          className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add/Edit Category Modal */}
+                {(isAddingCategory || editingCategory) && (
+                  <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[120] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
+                      <h3 className="text-xl font-bold text-gray-900 mb-4">
+                        {isAddingCategory ? 'Add New Category' : 'Edit Category'}
+                      </h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-sm font-bold text-gray-700 mb-1 block">Category Name</label>
+                          <input 
+                            type="text"
+                            value={isAddingCategory ? newCategory.name : editingCategory?.name}
+                            onChange={(e) => isAddingCategory 
+                              ? setNewCategory({...newCategory, name: e.target.value})
+                              : setEditingCategory(editingCategory ? {...editingCategory, name: e.target.value} : null)
+                            }
+                            className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none"
+                            placeholder="e.g. Rice & Grains"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-bold text-gray-700 mb-1 block">Icon Name (Lucide)</label>
+                          <input 
+                            type="text"
+                            value={isAddingCategory ? newCategory.icon : editingCategory?.icon}
+                            onChange={(e) => isAddingCategory 
+                              ? setNewCategory({...newCategory, icon: e.target.value})
+                              : setEditingCategory(editingCategory ? {...editingCategory, icon: e.target.value} : null)
+                            }
+                            className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none"
+                            placeholder="e.g. Wheat, Croissant, Beef"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-bold text-gray-700 mb-1 block">Display Order</label>
+                          <input 
+                            type="number"
+                            value={isAddingCategory ? newCategory.order : editingCategory?.order}
+                            onChange={(e) => isAddingCategory 
+                              ? setNewCategory({...newCategory, order: parseInt(e.target.value)})
+                              : setEditingCategory(editingCategory ? {...editingCategory, order: parseInt(e.target.value)} : null)
+                            }
+                            className="w-full px-4 py-2 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="checkbox"
+                            checked={isAddingCategory ? newCategory.isActive : editingCategory?.isActive}
+                            onChange={(e) => isAddingCategory 
+                              ? setNewCategory({...newCategory, isActive: e.target.checked})
+                              : setEditingCategory(editingCategory ? {...editingCategory, isActive: e.target.checked} : null)
+                            }
+                            id="cat-active"
+                          />
+                          <label htmlFor="cat-active" className="text-sm font-bold text-gray-700">Active</label>
+                        </div>
+                        <div className="flex gap-3 mt-6">
+                          <button 
+                            onClick={() => {
+                              setIsAddingCategory(false);
+                              setEditingCategory(null);
+                            }}
+                            className="flex-1 px-4 py-2 border border-gray-200 rounded-xl font-bold text-gray-700 hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
+                          <button 
+                            onClick={async () => {
+                              if (isAddingCategory) {
+                                await addCategory(newCategory);
+                                showSuccess('Category added successfully!');
+                                setIsAddingCategory(false);
+                                setNewCategory({ name: '', icon: '', order: 0, isActive: true });
+                              } else if (editingCategory) {
+                                await updateCategory(editingCategory);
+                                showSuccess('Category updated successfully!');
+                                setEditingCategory(null);
+                              }
+                            }}
+                            className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-100"
+                          >
+                            {isAddingCategory ? 'Add Category' : 'Save Changes'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeTab === 'orders' && (
               <table className="w-full text-left">
                 <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
@@ -1130,6 +1280,7 @@ export default function AdminDashboard() {
                     <th className="px-6 py-4 font-bold">User</th>
                     <th className="px-6 py-4 font-bold">Rating</th>
                     <th className="px-6 py-4 font-bold">Comment</th>
+                    <th className="px-6 py-4 font-bold">Status</th>
                     <th className="px-6 py-4 font-bold">Date</th>
                     <th className="px-6 py-4 font-bold text-right">Actions</th>
                   </tr>
@@ -1148,27 +1299,56 @@ export default function AdminDashboard() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600 max-w-xs truncate">{review.comment}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
+                          review.status === 'approved' ? 'bg-emerald-100 text-emerald-700' : 
+                          review.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {review.status}
+                        </span>
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-500">
                         {ensureDate(review.createdAt).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button 
-                          onClick={() => {
-                            setConfirmModal({
-                              isOpen: true,
-                              title: 'Delete Review?',
-                              message: 'Are you sure you want to remove this review? This is usually done for moderation purposes.',
-                              onConfirm: async () => {
-                                await deleteReviewAdmin(review.id);
-                                showSuccess('Review removed successfully.');
-                                setConfirmModal(prev => ({ ...prev, isOpen: false }));
-                              }
-                            });
-                          }}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          {review.status !== 'approved' && (
+                            <button 
+                              onClick={() => updateReviewStatusAdmin(review.id, 'approved')}
+                              className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg"
+                              title="Approve Review"
+                            >
+                              <CheckCircle className="w-5 h-5" />
+                            </button>
+                          )}
+                          {review.status !== 'flagged' && (
+                            <button 
+                              onClick={() => updateReviewStatusAdmin(review.id, 'flagged')}
+                              className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg"
+                              title="Flag Review"
+                            >
+                              <AlertCircle className="w-5 h-5" />
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => {
+                              setConfirmModal({
+                                isOpen: true,
+                                title: 'Delete Review?',
+                                message: 'Are you sure you want to remove this review? This is usually done for moderation purposes.',
+                                onConfirm: async () => {
+                                  await deleteReviewAdmin(review.id);
+                                  showSuccess('Review removed successfully.');
+                                  setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                                }
+                              });
+                            }}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                            title="Delete Review"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

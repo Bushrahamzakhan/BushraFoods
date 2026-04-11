@@ -5,7 +5,7 @@ import {
   Package, Clock, CheckCircle, Truck, MapPin, 
   CreditCard, Banknote, User as UserIcon, Heart, 
   Settings, ShoppingBag, ChevronRight, Star, MessageSquare, X, Users,
-  Eye, EyeOff, Lock, Upload, Search, Filter, RefreshCw, Store, XCircle
+  Eye, EyeOff, Lock, Upload, Search, Filter, RefreshCw, Store, XCircle, AlertCircle
 } from 'lucide-react';
 import { OrderStatus, PaymentStatus } from '../types';
 import { ensureDate } from '../lib/utils';
@@ -32,7 +32,7 @@ export default function CustomerDashboard() {
   const { subscriptions, groupPurchases, updateSubscriptionStatus } = useAppContext();
 
   useEffect(() => {
-    const state = location.state as { openChatWith?: string, activeTab?: string };
+    const state = location.state as { openChatWith?: string, activeTab?: string, triggerReceiptUpload?: boolean, statusFilter?: string };
     if (state?.openChatWith) {
       setActiveTab('messages');
       setSelectedChatUserId(state.openChatWith);
@@ -40,9 +40,32 @@ export default function CustomerDashboard() {
       navigate(location.pathname, { replace: true, state: {} });
     } else if (state?.activeTab) {
       setActiveTab(state.activeTab as any);
+      
+      if (state.statusFilter) {
+        setOrderStatusFilter(state.statusFilter);
+      }
+      
+      // If triggered from checkout, find pending orders
+      if (state.triggerReceiptUpload && orders.length > 0) {
+        const pendingOrders = orders.filter(o => 
+          o.customerId === currentUser?.id && 
+          o.paymentStatus === 'pending' && 
+          o.paymentMethod !== 'card'
+        );
+
+        if (pendingOrders.length === 1) {
+          // If only one vendor, open the upload modal directly
+          setUploadingReceiptOrder(pendingOrders[0]);
+        } else if (pendingOrders.length > 1) {
+          // If multiple vendors, ensure we are on orders tab and pending filter is on
+          // The state already sets these, so we just let the user see the alert
+          setOrderStatusFilter('pending');
+        }
+      }
+      
       navigate(location.pathname, { replace: true, state: {} });
     }
-  }, [location.state]);
+  }, [location.state, orders, currentUser?.id]);
 
   const [profileData, setProfileData] = useState({
     name: currentUser?.name || '',
@@ -502,6 +525,96 @@ export default function CustomerDashboard() {
                 </div>
               </div>
 
+              {/* Pending Payments Alert */}
+              {myOrders.some(o => o.paymentStatus === 'pending' && o.paymentMethod !== 'card') && (
+                <div className="bg-amber-50 border border-amber-200 p-5 rounded-2xl space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 flex-shrink-0">
+                      <AlertCircle className="w-6 h-6" />
+                    </div>
+                    <div className="flex-grow">
+                      <p className="font-bold text-amber-900 text-lg">Action Required: Separate Vendor Payments</p>
+                      <p className="text-sm text-amber-700 leading-relaxed">
+                        You have orders awaiting manual payment. <span className="font-bold underline">IMPORTANT:</span> Since you purchased from different vendors, you <span className="font-bold">must make separate payments</span> to each vendor below. Do not pay the total amount to a single vendor.
+                      </p>
+                    </div>
+                    <button 
+                      onClick={() => setOrderStatusFilter('pending')}
+                      className="hidden md:block px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-bold hover:bg-amber-700 transition-colors shadow-sm whitespace-nowrap"
+                    >
+                      View All Pending
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+                    {(() => {
+                      const pendingByVendor = myOrders
+                        .filter(o => o.paymentStatus === 'pending' && o.paymentMethod !== 'card')
+                        .reduce((acc, order) => {
+                          if (!acc[order.vendorId]) {
+                            acc[order.vendorId] = {
+                              name: order.vendorName,
+                              total: 0,
+                              currency: order.currency,
+                              count: 0
+                            };
+                          }
+                          acc[order.vendorId].total += order.totalAmount;
+                          acc[order.vendorId].count += 1;
+                          return acc;
+                        }, {} as Record<string, { name: string, total: number, currency: string, count: number }>);
+
+                      return Object.entries(pendingByVendor).map(([vendorId, data]) => (
+                        <div key={vendorId} className="bg-white p-4 rounded-xl border border-amber-100 shadow-sm flex flex-col justify-between hover:border-amber-300 transition-all">
+                          <div>
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-1">Pay to Vendor</p>
+                                <p className="font-bold text-gray-900 truncate max-w-[120px]">{data.name}</p>
+                              </div>
+                              <div className="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                {data.count} {data.count === 1 ? 'Order' : 'Orders'}
+                              </div>
+                            </div>
+                            <p className="text-2xl font-black text-amber-700">{formatPrice(data.total, data.currency)}</p>
+                          </div>
+                          <div className="mt-4 pt-3 border-t border-amber-50 flex gap-2">
+                            <button 
+                              onClick={() => {
+                                setOrderSearch(vendorId);
+                                setOrderStatusFilter('pending');
+                              }}
+                              className="flex-1 py-2 bg-amber-100 text-amber-700 rounded-lg text-[10px] font-bold hover:bg-amber-200 transition-colors"
+                            >
+                              View Details
+                            </button>
+                            <button 
+                              onClick={() => {
+                                const vendorOrder = myOrders.find(o => o.vendorId === vendorId && o.paymentStatus === 'pending');
+                                if (vendorOrder) setUploadingReceiptOrder(vendorOrder);
+                              }}
+                              className="flex-1 py-2 bg-amber-600 text-white rounded-lg text-[10px] font-bold hover:bg-amber-700 transition-colors shadow-sm flex items-center justify-center gap-1"
+                            >
+                              <Upload className="w-3 h-3" />
+                              Upload
+                            </button>
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                  
+                  <div className="md:hidden">
+                    <button 
+                      onClick={() => setOrderStatusFilter('pending')}
+                      className="w-full py-3 bg-amber-600 text-white rounded-xl text-sm font-bold hover:bg-amber-700 transition-colors shadow-sm"
+                    >
+                      View All Pending Orders
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Filters & Search */}
               <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4">
                 <div className="flex flex-col lg:flex-row gap-4">
@@ -705,7 +818,7 @@ export default function CustomerDashboard() {
                             )}
 
                             <div className="pt-4 border-t border-gray-200 mt-4">
-                              <div className="flex justify-between items-start">
+                              <div className="flex justify-between items-start mb-4">
                                 <div>
                                   <p className="text-xs text-gray-400 mb-2 uppercase tracking-widest font-bold">Payment Status</p>
                                   <div className="flex items-center gap-2">
@@ -718,43 +831,72 @@ export default function CustomerDashboard() {
                                   </div>
                                 </div>
                                 <div className="flex flex-col items-end gap-2">
-                                  {(order.paymentStatus === 'pending' || order.paymentStatus === 'rejected') && order.paymentMethod !== 'card' && (
-                                    <button 
-                                      onClick={() => setUploadingReceiptOrder(order)}
-                                      className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-bold hover:bg-green-700 transition-colors shadow-sm flex items-center gap-1.5"
-                                    >
-                                      <Upload className="w-3 h-3" />
-                                      {order.paymentStatus === 'rejected' ? 'Re-upload Receipt' : 'Upload Receipt'}
-                                    </button>
+                                  {order.paymentMethod !== 'card' && (
+                                    <>
+                                      {(order.paymentStatus === 'pending' || order.paymentStatus === 'rejected') ? (
+                                        <button 
+                                          onClick={() => setUploadingReceiptOrder(order)}
+                                          className="w-full sm:w-auto px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-bold hover:bg-green-700 transition-all shadow-md shadow-green-100 flex items-center justify-center gap-2"
+                                        >
+                                          <Upload className="w-3.5 h-3.5" />
+                                          {order.paymentStatus === 'rejected' ? 'Re-upload Receipt' : 'Upload Receipt'}
+                                        </button>
+                                      ) : order.paymentReceipt?.imageUrl ? (
+                                        <button 
+                                          onClick={() => setViewingReceiptUrl(order.paymentReceipt?.imageUrl || null)}
+                                          className="w-full sm:w-auto px-4 py-2 bg-blue-50 text-blue-700 border border-blue-100 rounded-xl text-xs font-bold hover:bg-blue-100 transition-all shadow-sm flex items-center justify-center gap-2"
+                                        >
+                                          <Eye className="w-3.5 h-3.5" />
+                                          View Receipt
+                                        </button>
+                                      ) : null}
+                                    </>
                                   )}
-                                  {order.paymentReceipt?.imageUrl && (
+                                  
+                                  <div className="flex gap-2 w-full sm:w-auto">
                                     <button 
-                                      onClick={() => setViewingReceiptUrl(order.paymentReceipt?.imageUrl || null)}
-                                      className="px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-100 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors shadow-sm flex items-center gap-1.5"
+                                      onClick={() => handleBuyAgain(order)}
+                                      className="flex-1 sm:flex-none px-3 py-1.5 bg-green-50 text-green-700 border border-green-100 rounded-lg text-[10px] font-bold hover:bg-green-100 transition-colors flex items-center justify-center gap-1.5"
                                     >
-                                      <Eye className="w-3 h-3" />
-                                      View Receipt
+                                      <RefreshCw className="w-3 h-3" />
+                                      Buy Again
                                     </button>
-                                  )}
-                                  <button 
-                                    onClick={() => handleBuyAgain(order)}
-                                    className="px-3 py-1.5 bg-green-50 text-green-700 border border-green-100 rounded-lg text-xs font-bold hover:bg-green-100 transition-colors shadow-sm flex items-center gap-1.5"
-                                  >
-                                    <RefreshCw className="w-3 h-3" />
-                                    Buy Again
-                                  </button>
-                                  <button 
-                                    onClick={() => {
-                                      setSelectedChatUserId(order.vendorId);
-                                      setActiveTab('messages');
-                                    }}
-                                    className="px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg text-xs font-bold hover:bg-gray-50 transition-colors shadow-sm flex items-center gap-1.5"
-                                  >
-                                    <MessageSquare className="w-3 h-3" />
-                                    Chat with Vendor
-                                  </button>
+                                    <button 
+                                      onClick={() => {
+                                        setSelectedChatUserId(order.vendorId);
+                                        setActiveTab('messages');
+                                      }}
+                                      className="flex-1 sm:flex-none px-3 py-1.5 bg-white text-gray-700 border border-gray-200 rounded-lg text-[10px] font-bold hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
+                                    >
+                                      <MessageSquare className="w-3 h-3" />
+                                      Chat
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
+
+                              {/* Payment Instructions for Pending Orders */}
+                              {order.paymentStatus === 'pending' && order.paymentMethod !== 'card' && order.vendorPaymentDetails && (
+                                <div className="mt-4 p-4 bg-emerald-50 border border-emerald-100 rounded-xl">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Banknote className="w-4 h-4 text-emerald-600" />
+                                    <h5 className="text-xs font-bold text-emerald-900 uppercase tracking-widest">Payment Instructions</h5>
+                                  </div>
+                                  <p className="text-xs text-emerald-700 mb-2 leading-relaxed">
+                                    {order.vendorPaymentDetails.instructions || `Please pay ${formatPrice(order.totalAmount, order.currency)} via ${order.vendorPaymentDetails.name}.`}
+                                  </p>
+                                  {order.vendorPaymentDetails.details && (
+                                    <div className="p-2 bg-white/50 rounded-lg text-[10px] font-mono text-emerald-800 break-all mb-2">
+                                      {order.vendorPaymentDetails.details}
+                                    </div>
+                                  )}
+                                  {order.vendorPaymentDetails.qrCodeUrl && (
+                                    <div className="flex justify-center bg-white p-2 rounded-lg border border-emerald-200 w-fit mx-auto">
+                                      <img src={order.vendorPaymentDetails.qrCodeUrl} alt="QR Code" className="w-24 h-24 object-contain" referrerPolicy="no-referrer" />
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                               
                               {order.paymentStatus === 'rejected' && order.paymentReceipt?.rejectionReason && (
                                 <div className="mt-3 p-3 bg-red-50 border border-red-100 rounded-lg">

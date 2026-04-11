@@ -25,7 +25,8 @@ export default function VendorDashboard() {
     convertPrice, conversations, subscriptions, groupPurchases, 
     createInvestmentOpportunity, investmentOpportunities, vendorInvestments,
     updatePassword, addVendorPaymentMethod, updateVendorPaymentMethod, 
-    deleteVendorPaymentMethod, reviewPaymentReceipt
+    deleteVendorPaymentMethod, reviewPaymentReceipt,
+    categories
   } = useAppContext();
   const location = useLocation();
   const navigate = useNavigate();
@@ -1282,8 +1283,8 @@ export default function VendorDashboard() {
                   <label className="text-sm font-medium text-gray-700">Category</label>
                   <select name="category" value={formData.category} onChange={handleInputChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg">
                     <option value="">Select Category</option>
-                    {CATEGORIES.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
+                    {categories.filter(c => c.isActive).sort((a, b) => a.order - b.order).map(cat => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
                     ))}
                   </select>
                 </div>
