@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
-import { CheckCircle, CreditCard, Truck, MapPin, Banknote, QrCode, Building2, Wallet, HelpCircle, MessageSquare, Upload, ShoppingBag, RefreshCw } from 'lucide-react';
+import { CheckCircle, CreditCard, Truck, MapPin, Banknote, QrCode, Building2, Wallet, HelpCircle, MessageSquare, Upload, ShoppingBag, RefreshCw, ShieldCheck } from 'lucide-react';
 import { PaymentMethodType, ShippingDetails, User, CartItem, Order } from '../types';
 import PaymentReceiptUpload from '../components/PaymentReceiptUpload';
 
 export default function Checkout() {
-  const { cart, placeOrder, currentUser, formatPrice, getCartTotal, vendors } = useAppContext();
+  const { cart, placeOrder, currentUser, formatPrice, getCartTotal, vendors, systemConfig } = useAppContext();
   const navigate = useNavigate();
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -14,6 +14,13 @@ export default function Checkout() {
   const totalAmount = getCartTotal();
 
   const [vendorPaymentMethods, setVendorPaymentMethods] = useState<Record<string, PaymentMethodType>>({});
+
+  // Online payments visibility logic
+  const isOnlinePaymentVisible = systemConfig?.onlinePaymentsEnabled && (
+    systemConfig?.stripeEnabled || 
+    systemConfig?.paypalEnabled || 
+    systemConfig?.twoCheckoutEnabled
+  );
 
   // Group cart items by vendor
   const vendorGroups = cart.reduce((groups, item) => {
@@ -36,14 +43,22 @@ export default function Checkout() {
       if (!initialMethods[vendorId]) {
         const vendor = vendorGroups[vendorId].vendor;
         const firstActive = vendor?.paymentMethods?.find(m => m.isActive);
-        initialMethods[vendorId] = (firstActive?.type as PaymentMethodType) || 'card';
+        
+        // Default to card if online payments are enabled, otherwise use first active vendor method or other
+        if (isOnlinePaymentVisible) {
+          initialMethods[vendorId] = 'card';
+        } else if (firstActive) {
+          initialMethods[vendorId] = (firstActive?.type as PaymentMethodType);
+        } else {
+          initialMethods[vendorId] = 'other';
+        }
         changed = true;
       }
     });
     if (changed) {
       setVendorPaymentMethods(initialMethods);
     }
-  }, [vendorGroups]);
+  }, [vendorGroups, isOnlinePaymentVisible]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -180,21 +195,23 @@ export default function Checkout() {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {/* Default Card Option */}
-                    <button
-                      type="button"
-                      onClick={() => setVendorPaymentMethods(prev => ({ ...prev, [vendorId]: 'card' }))}
-                      className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${
-                        vendorPaymentMethods[vendorId] === 'card' 
-                          ? 'border-green-600 bg-green-50 text-green-800' 
-                          : 'border-gray-100 hover:border-green-200 text-gray-600'
-                      }`}
-                    >
-                      <CreditCard className="w-5 h-5" />
-                      <div className="text-left">
-                        <p className="font-bold text-sm">Credit/Debit Card</p>
-                        <p className="text-[10px] opacity-70">Secure online payment</p>
-                      </div>
-                    </button>
+                    {isOnlinePaymentVisible && (
+                      <button
+                        type="button"
+                        onClick={() => setVendorPaymentMethods(prev => ({ ...prev, [vendorId]: 'card' }))}
+                        className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${
+                          vendorPaymentMethods[vendorId] === 'card' 
+                            ? 'border-green-600 bg-green-50 text-green-800' 
+                            : 'border-gray-100 hover:border-green-200 text-gray-600'
+                        }`}
+                      >
+                        <CreditCard className="w-5 h-5" />
+                        <div className="text-left">
+                          <p className="font-bold text-sm">Credit/Debit Card</p>
+                          <p className="text-[10px] opacity-70">Secure online payment</p>
+                        </div>
+                      </button>
+                    )}
 
                     {/* Vendor Configured Methods */}
                     {group.vendor?.paymentMethods?.filter(m => m.isActive).map(method => (
@@ -237,8 +254,13 @@ export default function Checkout() {
                   <div className="mt-6 pt-6 border-t border-gray-50">
                     {vendorPaymentMethods[vendorId] === 'card' ? (
                       <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Card Details</label>
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 uppercase tracking-tighter bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                            <ShieldCheck className="w-3 h-3" /> Secure SSL Encrypted
+                          </div>
+                        </div>
                         <div className="space-y-2">
-                          <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Card Number</label>
                           <input required type="text" name="cardNumber" placeholder="0000 0000 0000 0000" value={formData.cardNumber} onChange={handleInputChange} className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-lg focus:ring-2 focus:ring-green-500 outline-none font-mono" />
                         </div>
                         <div className="grid grid-cols-2 gap-4">

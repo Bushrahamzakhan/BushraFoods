@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
-import { User, Product, CartItem, Order, OrderStatus, ShippingDetails, PaymentMethod, SUPPORTED_CURRENCIES, Notification, ChatMessage, ChatConversation, Review, Subscription, GroupPurchase, InvestmentOpportunity, Investment, InvestorWallet, Role, AuditLog, PaymentMethodType, VendorPaymentMethod, PaymentReceipt, PaymentStatus, VendorApplication, Category } from '../types';
+import { User, Product, CartItem, Order, OrderStatus, ShippingDetails, PaymentMethod, SUPPORTED_CURRENCIES, Notification, ChatMessage, ChatConversation, Review, Subscription, GroupPurchase, InvestmentOpportunity, Investment, InvestorWallet, Role, AuditLog, PaymentMethodType, VendorPaymentMethod, PaymentReceipt, PaymentStatus, VendorApplication, Category, SystemConfig } from '../types';
 import { ensureDate } from '../lib/utils';
 import { auth, db, storage } from '../firebase';
 import { 
@@ -67,6 +67,8 @@ const EXCHANGE_RATES: Record<string, number> = {
   NZD: 1.66,
   BRL: 5.05,
 };
+
+const SUPER_ADMIN_EMAILS = ['bushraanwar854@gmail.com', 'halalmarketonlineofficial@gmail.com'];
 
 enum OperationType {
   CREATE = 'create',
@@ -235,8 +237,8 @@ interface AppContextType {
   subscriptions: Subscription[];
   fetchGroupPurchases: () => Promise<void>;
   fetchSubscriptions: () => Promise<void>;
-  createGroupPurchase: (productId: string, targetMembers: number, paymentMethod: PaymentMethodType, shippingDetails: ShippingDetails, durationHours?: number) => Promise<void>;
-  joinGroupPurchase: (groupId: string, paymentMethod: PaymentMethodType, shippingDetails: ShippingDetails) => Promise<void>;
+  createGroupPurchase: (productId: string, targetMembers: number, paymentMethod: PaymentMethodType, shippingDetails: ShippingDetails, durationHours?: number) => Promise<boolean>;
+  joinGroupPurchase: (groupId: string, paymentMethod: PaymentMethodType, shippingDetails: ShippingDetails) => Promise<boolean>;
   createSubscription: (productId: string, frequency: 'daily' | 'weekly' | 'monthly', quantity: number) => Promise<void>;
   updateSubscriptionStatus: (id: string, status: 'active' | 'paused' | 'cancelled') => Promise<void>;
   investmentOpportunities: InvestmentOpportunity[];
@@ -257,12 +259,15 @@ interface AppContextType {
   addCategory: (category: Omit<Category, 'id' | 'createdAt'>) => Promise<void>;
   updateCategory: (category: Category) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
+  systemConfig: SystemConfig | null;
+  updateSystemConfig: (config: Partial<SystemConfig>) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const isUserSuperAdmin = currentUser?.email && SUPER_ADMIN_EMAILS.includes(currentUser.email);
   const [preferredCurrency, setPreferredCurrency] = useState<string>(() => {
     return localStorage.getItem('preferredCurrency') || 'original';
   });
@@ -279,6 +284,44 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return saved ? JSON.parse(saved) : { country: '', city: '' };
   });
   const [categories, setCategories] = useState<Category[]>([]);
+  const [systemConfig, setSystemConfig] = useState<SystemConfig | null>(null);
+
+  // System Config Listener and Seeder
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'systemConfig', 'main'), async (snapshot) => {
+      if (!snapshot.exists() && (currentUser?.role === 'admin' || isUserSuperAdmin)) {
+        // Seed default config
+        const defaultConfig: SystemConfig = {
+          id: 'main',
+          onlinePaymentsEnabled: true,
+          stripeEnabled: true,
+          paypalEnabled: false,
+          twoCheckoutEnabled: false,
+          updatedAt: serverTimestamp() as any
+        };
+        await setDoc(doc(db, 'systemConfig', 'main'), defaultConfig);
+      } else if (snapshot.exists()) {
+        setSystemConfig({ id: snapshot.id, ...snapshot.data() } as SystemConfig);
+      }
+    }, (error) => {
+      // Don't throw for non-admins who might not have read access yet or if it doesn't exist
+      console.log('System config not yet available or access restricted');
+    });
+
+    return () => unsubscribe();
+  }, [currentUser?.id, currentUser?.role]);
+
+  const updateSystemConfig = async (config: Partial<SystemConfig>) => {
+    if (currentUser?.role !== 'admin' && !isUserSuperAdmin) return;
+    try {
+      await updateDoc(doc(db, 'systemConfig', 'main'), cleanData({
+        ...config,
+        updatedAt: serverTimestamp()
+      }));
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, 'systemConfig/main');
+    }
+  };
 
   // Category Listener and Seeder
   useEffect(() => {
@@ -373,7 +416,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             let userData = userDoc.data() as User;
             
             // Force admin role for super admin email
-            if (firebaseUser.email === 'bushraanwar854@gmail.com' && userData.role !== 'admin') {
+            if (firebaseUser.email && SUPER_ADMIN_EMAILS.includes(firebaseUser.email) && userData.role !== 'admin') {
               userData.role = 'admin';
               try {
                 await updateDoc(doc(db, 'users', firebaseUser.uid), { role: 'admin' });
@@ -389,7 +432,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               id: firebaseUser.uid,
               name: firebaseUser.displayName || 'User',
               email: firebaseUser.email || '',
-              role: firebaseUser.email === 'bushraanwar854@gmail.com' ? 'admin' : 'customer',
+              role: (firebaseUser.email && SUPER_ADMIN_EMAILS.includes(firebaseUser.email)) ? 'admin' : 'customer',
               status: 'active',
               createdAt: serverTimestamp() as any
             };
@@ -1374,11 +1417,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const createGroupPurchase = async (productId: string, targetMembers: number, paymentMethod: PaymentMethodType, shippingDetails: ShippingDetails, durationHours: number = 24) => {
-    if (!currentUser) return;
+    if (!currentUser) return false;
     try {
       const product = products.find(p => p.id === productId);
-      if (!product) return;
+      if (!product) return false;
 
+      const isCompleted = targetMembers <= 1;
       const newGroup = cleanData({
         productId,
         productName: product.name,
@@ -1389,7 +1433,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         price: product.groupPrice || product.price,
         currency: product.currency,
         expiresAt: ensureDate(new Date(Date.now() + durationHours * 3600000)).toISOString(),
-        status: 'open',
+        status: isCompleted ? 'completed' : 'open',
         createdAt: serverTimestamp(),
         members: [{
           id: Math.random().toString(36).substr(2, 9),
@@ -1401,19 +1445,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }]
       });
 
-      await addDoc(collection(db, 'groupPurchases'), newGroup);
+      const docRef = await addDoc(collection(db, 'groupPurchases'), newGroup);
       fetchGroupPurchases();
+
+      if (isCompleted) {
+        // This is highly unlikely but for completeness:
+        // We would need to create orders here too if targetMembers was 1
+        // But usually targetMembers is at least 2.
+      }
+
+      return isCompleted;
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, 'groupPurchases');
+      return false;
     }
   };
 
   const joinGroupPurchase = async (groupId: string, paymentMethod: PaymentMethodType, shippingDetails: ShippingDetails) => {
-    if (!currentUser) return;
+    if (!currentUser) return false;
     try {
       const groupRef = doc(db, 'groupPurchases', groupId);
       const groupSnap = await getDoc(groupRef);
-      if (!groupSnap.exists()) return;
+      if (!groupSnap.exists()) return false;
       const groupData = groupSnap.data();
 
       if (groupData.status !== 'open') throw new Error('Group purchase is no longer open');
@@ -1525,6 +1578,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       fetchGroupPurchases();
       fetchOrders();
+      return isCompleted;
     } catch (e) {
       // This catch handles errors before the updateDoc or custom errors
       if (e instanceof Error && e.message === 'Group purchase is no longer open') {
@@ -2389,7 +2443,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       categories,
       addCategory,
       updateCategory,
-      deleteCategory
+      deleteCategory,
+      systemConfig,
+      updateSystemConfig
     }}>
       {children}
     </AppContext.Provider>

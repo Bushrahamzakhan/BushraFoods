@@ -67,8 +67,8 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isAuthenticated() && 
-             (request.auth.token.email == "bushraanwar854@gmail.com" || request.auth.token.email == "halalmarketonlineofficial@gmail.com") &&
-             request.auth.token.email_verified == true;
+             request.auth.token.email_verified == true &&
+             (request.auth.token.email == "bushraanwar854@gmail.com" || request.auth.token.email == "halalmarketonlineofficial@gmail.com");
     }
 
     function isAdmin() {
@@ -160,6 +160,11 @@ service cloud.firestore {
         (isFullAdmin() && isValidUser(request.resource.data))
       );
       allow delete: if isAuthenticated() && isSuperAdmin();
+    }
+
+    match /systemConfig/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     match /products/{productId} {

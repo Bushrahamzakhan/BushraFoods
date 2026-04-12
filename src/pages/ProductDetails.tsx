@@ -105,7 +105,12 @@ export default function ProductDetails() {
     };
     addToCart(finalProduct, quantity, selectedOptions);
     setAdded(true);
-    setTimeout(() => setAdded(false), 2000);
+    
+    // Redirect to cart page after a short delay to show the "Added" state
+    setTimeout(() => {
+      setAdded(false);
+      navigate('/cart');
+    }, 500);
   };
 
   const handleSubscribe = async () => {

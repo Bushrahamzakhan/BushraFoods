@@ -44,7 +44,9 @@ export default function Login() {
         navigate(from.pathname, { state: from.state });
       } else {
         // Redirect based on role
-        if (currentUser.role === 'admin' || currentUser.email === 'bushraanwar854@gmail.com') navigate('/admin');
+        if (currentUser.role === 'admin' || 
+            currentUser.email === 'bushraanwar854@gmail.com' || 
+            currentUser.email === 'halalmarketonlineofficial@gmail.com') navigate('/admin');
         else if (currentUser.role === 'vendor') navigate('/vendor');
         else if (currentUser.role === 'investor') navigate('/investor');
         else navigate('/customer');

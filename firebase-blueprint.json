@@ -310,6 +310,20 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "action", "performedBy", "performedByName", "targetUserId", "targetUserName", "createdAt"]
+    },
+    "SystemConfig": {
+      "title": "SystemConfig",
+      "description": "Global system configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "onlinePaymentsEnabled": { "type": "boolean" },
+        "stripeEnabled": { "type": "boolean" },
+        "paypalEnabled": { "type": "boolean" },
+        "twoCheckoutEnabled": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "onlinePaymentsEnabled", "updatedAt"]
     }
   },
   "firestore": {
@@ -328,6 +342,7 @@
     "/vendorApplications/{applicationId}": { "schema": "VendorApplication", "description": "Vendor application document" },
     "/categories/{categoryId}": { "schema": "Category", "description": "Product category document" },
     "/media/{mediaId}": { "schema": "Media", "description": "Media storage document" },
-    "/auditLogs/{logId}": { "schema": "AuditLog", "description": "System audit log document" }
+    "/auditLogs/{logId}": { "schema": "AuditLog", "description": "System audit log document" },
+    "/systemConfig/{configId}": { "schema": "SystemConfig", "description": "System configuration document" }
   }
 }

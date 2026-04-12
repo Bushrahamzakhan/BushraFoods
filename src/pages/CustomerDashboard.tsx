@@ -46,24 +46,29 @@ export default function CustomerDashboard() {
       }
       
       // If triggered from checkout, find pending orders
-      if (state.triggerReceiptUpload && orders.length > 0) {
+      if (state.triggerReceiptUpload) {
         const pendingOrders = orders.filter(o => 
           o.customerId === currentUser?.id && 
           o.paymentStatus === 'pending' && 
           o.paymentMethod !== 'card'
         );
 
-        if (pendingOrders.length === 1) {
-          // If only one vendor, open the upload modal directly
-          setUploadingReceiptOrder(pendingOrders[0]);
-        } else if (pendingOrders.length > 1) {
-          // If multiple vendors, ensure we are on orders tab and pending filter is on
-          // The state already sets these, so we just let the user see the alert
-          setOrderStatusFilter('pending');
+        if (pendingOrders.length > 0) {
+          if (pendingOrders.length === 1) {
+            // If only one vendor, open the upload modal directly
+            setUploadingReceiptOrder(pendingOrders[0]);
+          } else {
+            // If multiple vendors, ensure we are on orders tab and pending filter is on
+            setOrderStatusFilter('pending');
+          }
+          // Clear state only after handling orders
+          navigate(location.pathname, { replace: true, state: {} });
         }
+        // If no pending orders yet, we wait for the next effect run when orders load
+      } else {
+        // No receipt upload trigger, clear state immediately
+        navigate(location.pathname, { replace: true, state: {} });
       }
-      
-      navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.state, orders, currentUser?.id]);
 
@@ -579,27 +584,7 @@ export default function CustomerDashboard() {
                             </div>
                             <p className="text-2xl font-black text-amber-700">{formatPrice(data.total, data.currency)}</p>
                           </div>
-                          <div className="mt-4 pt-3 border-t border-amber-50 flex gap-2">
-                            <button 
-                              onClick={() => {
-                                setOrderSearch(vendorId);
-                                setOrderStatusFilter('pending');
-                              }}
-                              className="flex-1 py-2 bg-amber-100 text-amber-700 rounded-lg text-[10px] font-bold hover:bg-amber-200 transition-colors"
-                            >
-                              View Details
-                            </button>
-                            <button 
-                              onClick={() => {
-                                const vendorOrder = myOrders.find(o => o.vendorId === vendorId && o.paymentStatus === 'pending');
-                                if (vendorOrder) setUploadingReceiptOrder(vendorOrder);
-                              }}
-                              className="flex-1 py-2 bg-amber-600 text-white rounded-lg text-[10px] font-bold hover:bg-amber-700 transition-colors shadow-sm flex items-center justify-center gap-1"
-                            >
-                              <Upload className="w-3 h-3" />
-                              Upload
-                            </button>
-                          </div>
+                          
                         </div>
                       ));
                     })()}

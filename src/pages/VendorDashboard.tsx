@@ -298,6 +298,84 @@ export default function VendorDashboard() {
         </div>
       </div>
 
+      {/* Latest Orders Section */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <ShoppingBag className="w-5 h-5 text-green-600" />
+            <h3 className="text-lg font-bold text-gray-900">Latest Orders</h3>
+          </div>
+          <button onClick={() => setActiveTab('orders')} className="text-sm text-green-600 font-medium hover:underline">Manage All Orders</button>
+        </div>
+        <div className="p-6 space-y-6">
+          {myOrders.length === 0 ? (
+            <div className="text-center py-12">
+              <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+              <p className="text-gray-500">No orders yet.</p>
+            </div>
+          ) : (
+            myOrders.slice(0, 3).map(order => (
+              <div key={order.id} className="bg-gray-50 rounded-2xl overflow-hidden border border-gray-100 hover:border-green-200 transition-colors">
+                <div className="px-6 py-4 border-b border-gray-200/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-bold text-gray-900">Order #{order.id.slice(0, 8).toUpperCase()}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-widest ${getStatusColor(order.status)}`}>
+                        {order.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500">{order.customerName} • {ensureDate(order.createdAt).toLocaleString()}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-black text-gray-900">{formatPrice(order.totalAmount, order.currency)}</p>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{order.items.length} {order.items.length === 1 ? 'Item' : 'Items'}</p>
+                  </div>
+                </div>
+                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    {order.items.map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-3">
+                        <img src={item.imageUrl} alt={item.productName} className="w-10 h-10 rounded-lg object-cover border border-gray-200" referrerPolicy="no-referrer" />
+                        <div className="flex-grow">
+                          <p className="text-sm font-bold text-gray-900 line-clamp-1">{item.productName}</p>
+                          <p className="text-xs text-gray-500">{item.quantity}x • {formatPrice(item.price, item.currency)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-col justify-center gap-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 font-medium">Payment Status:</span>
+                      <span className={`font-bold uppercase ${
+                        order.paymentStatus === 'approved' ? 'text-green-600' : 
+                        order.paymentStatus === 'rejected' ? 'text-red-600' : 
+                        'text-blue-600'
+                      }`}>{getPaymentStatusDisplay(order.paymentStatus || 'pending')}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => setActiveTab('orders')}
+                        className="flex-grow py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        Manage Order
+                      </button>
+                      {order.paymentStatus === 'receipt_uploaded' && (
+                        <button 
+                          onClick={() => setActiveTab('orders')}
+                          className="flex-grow py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm"
+                        >
+                          Review Receipt
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Sales Chart */}
         <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
@@ -395,48 +473,8 @@ export default function VendorDashboard() {
       </div>
     </div>
 
-    {/* Recent Orders & Investments */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Recent Orders */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-            <h3 className="text-lg font-bold text-gray-900">Recent Orders</h3>
-            <button onClick={() => setActiveTab('orders')} className="text-sm text-green-600 font-medium hover:underline">View All</button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-gray-50 text-gray-500 text-[10px] font-bold uppercase tracking-widest">
-                <tr>
-                  <th className="px-6 py-4">Order ID</th>
-                  <th className="px-6 py-4">Customer</th>
-                  <th className="px-6 py-4">Amount</th>
-                  <th className="px-6 py-4">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {myOrders.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-gray-400 text-sm">No orders yet</td>
-                  </tr>
-                ) : (
-                  myOrders.slice(0, 5).map(order => (
-                    <tr key={order.id}>
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">#{order.id.slice(0, 8).toUpperCase()}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{order.customerName}</td>
-                      <td className="px-6 py-4 text-sm font-bold text-gray-900">{formatPrice(order.totalAmount, order.currency)}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${getStatusColor(order.status)}`}>
-                          {order.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
+    {/* Recent Investments */}
+      <div className="grid grid-cols-1 gap-8">
         {/* Recent Investments */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">

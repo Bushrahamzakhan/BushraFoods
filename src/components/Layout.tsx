@@ -105,7 +105,7 @@ export default function Layout({ children }: { children?: React.ReactNode }) {
                     {currentUser.role === 'vendor' && (
                       <Link to="/vendor" className="block px-4 py-2 text-sm hover:bg-emerald-50 hover:text-emerald-700">Vendor Dashboard</Link>
                     )}
-                    {(currentUser.role === 'admin' || currentUser.email === 'bushraanwar854@gmail.com') && (
+                    {(currentUser.role === 'admin' || currentUser.email === 'bushraanwar854@gmail.com' || currentUser.email === 'halalmarketonlineofficial@gmail.com') && (
                       <Link to="/admin" className="block px-4 py-2 text-sm hover:bg-emerald-50 hover:text-emerald-700">Admin Dashboard</Link>
                     )}
                     <button onClick={handleLogout} className="w-full text-left block px-4 py-2 text-sm hover:bg-emerald-50 hover:text-emerald-700">
@@ -366,7 +366,7 @@ export default function Layout({ children }: { children?: React.ReactNode }) {
             <ul className="space-y-2 text-sm text-gray-300">
               <li><Link to={currentUser ? (currentUser.role === 'vendor' ? "/vendor" : "/customer") : "/login"} className="hover:underline">Your Account</Link></li>
               <li><Link to={currentUser ? (currentUser.role === 'vendor' ? "/vendor" : "/customer") : "/login"} className="hover:underline">Your Orders</Link></li>
-              {(currentUser?.role === 'admin' || currentUser?.email === 'bushraanwar854@gmail.com') && (
+              {(currentUser?.role === 'admin' || currentUser?.email === 'bushraanwar854@gmail.com' || currentUser?.email === 'halalmarketonlineofficial@gmail.com') && (
                 <li><Link to="/admin" className="hover:underline text-emerald-400 font-bold">Admin Panel</Link></li>
               )}
               <li><Link to="/help" className="hover:underline">Shipping Rates & Policies</Link></li>

@@ -62,7 +62,9 @@ function AppRoutes() {
         <Route 
           path="/admin" 
           element={
-            (currentUser?.role === 'admin' || currentUser?.email === 'bushraanwar854@gmail.com')
+            (currentUser?.role === 'admin' || 
+             currentUser?.email === 'bushraanwar854@gmail.com' || 
+             currentUser?.email === 'halalmarketonlineofficial@gmail.com')
               ? <Layout><AdminDashboard /></Layout> 
               : <Navigate to="/login" replace />
           } 

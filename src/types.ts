@@ -341,3 +341,12 @@ export interface VendorApplication {
   reviewedAt?: string | Timestamp;
   reviewedBy?: string;
 }
+
+export interface SystemConfig {
+  id: string;
+  onlinePaymentsEnabled: boolean;
+  stripeEnabled: boolean;
+  paypalEnabled: boolean;
+  twoCheckoutEnabled: boolean;
+  updatedAt: string | Timestamp;
+}

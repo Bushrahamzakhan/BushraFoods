@@ -9,11 +9,19 @@ export default function GroupCheckout() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { products, groupPurchases, createGroupPurchase, joinGroupPurchase, currentUser, formatPrice, vendors } = useAppContext();
+  const { products, groupPurchases, createGroupPurchase, joinGroupPurchase, currentUser, formatPrice, vendors, systemConfig } = useAppContext();
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodType>('card');
+
+  // Online payments visibility logic
+  const isOnlinePaymentVisible = systemConfig?.onlinePaymentsEnabled && (
+    systemConfig?.stripeEnabled || 
+    systemConfig?.paypalEnabled || 
+    systemConfig?.twoCheckoutEnabled
+  );
+
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodType>(isOnlinePaymentVisible ? 'card' : 'other');
   
   const isJoining = location.state?.isJoining || false;
   const groupId = location.state?.groupId || null;
@@ -85,13 +93,27 @@ export default function GroupCheckout() {
           zipCode: formData.zipCode
         };
 
+        let completed = false;
         if (isJoining && groupId) {
-          await joinGroupPurchase(groupId, paymentMethod, shippingDetails);
+          completed = await joinGroupPurchase(groupId, paymentMethod, shippingDetails);
         } else {
-          await createGroupPurchase(product.id, product.targetMembers || 5, paymentMethod, shippingDetails, 24);
+          completed = await createGroupPurchase(product.id, product.targetMembers || 5, paymentMethod, shippingDetails, 24);
         }
+        
         setIsProcessing(false);
-        setIsSuccess(true);
+        
+        if (completed) {
+          // Redirect to Order History for last member or completed group
+          navigate('/customer', { 
+            state: { 
+              activeTab: 'orders', 
+              triggerReceiptUpload: paymentMethod !== 'card' 
+            } 
+          });
+        } else {
+          // Show success screen for non-last members
+          setIsSuccess(true);
+        }
       } catch (error: any) {
         setIsProcessing(false);
         alert(error.message || 'Failed to process group purchase');
@@ -219,21 +241,23 @@ export default function GroupCheckout() {
               </h2>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('card')}
-                  className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-colors ${
-                    paymentMethod === 'card' 
-                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800' 
-                      : 'border-gray-200 hover:border-emerald-200 text-gray-600'
-                  }`}
-                >
-                  <CreditCard className="w-6 h-6" />
-                  <div className="text-left">
-                    <p className="font-bold">Credit/Debit Card</p>
-                    <p className="text-[10px] opacity-70">Secure online payment</p>
-                  </div>
-                </button>
+                {isOnlinePaymentVisible && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('card')}
+                    className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-colors ${
+                      paymentMethod === 'card' 
+                        ? 'border-emerald-600 bg-emerald-50 text-emerald-800' 
+                        : 'border-gray-200 hover:border-emerald-200 text-gray-600'
+                    }`}
+                  >
+                    <CreditCard className="w-6 h-6" />
+                    <div className="text-left">
+                      <p className="font-bold">Credit/Debit Card</p>
+                      <p className="text-[10px] opacity-70">Secure online payment</p>
+                    </div>
+                  </button>
+                )}
 
                 {vendor?.paymentMethods?.filter(m => m.isActive).map(method => (
                   <button
@@ -260,8 +284,13 @@ export default function GroupCheckout() {
 
               {paymentMethod === 'card' && (
                 <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-gray-700">Card Details</label>
+                    <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 uppercase tracking-tighter bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                      <ShieldCheck className="w-3 h-3" /> Secure SSL Encrypted
+                    </div>
+                  </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700">Card Number</label>
                     <input required type="text" name="cardNumber" placeholder="0000 0000 0000 0000" value={formData.cardNumber} onChange={handleInputChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent font-mono" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">

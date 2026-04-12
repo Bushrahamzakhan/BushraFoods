@@ -16,7 +16,7 @@ import { ensureDate } from '../lib/utils';
 import ChatList from '../components/chat/ChatList';
 import ChatWindow from '../components/chat/ChatWindow';
 
-type AdminTab = 'overview' | 'vendor-applications' | 'vendors' | 'products' | 'categories' | 'orders' | 'customers' | 'investments' | 'group-buys' | 'reviews' | 'audit' | 'admins' | 'payments' | 'messages';
+type AdminTab = 'overview' | 'vendor-applications' | 'vendors' | 'products' | 'categories' | 'orders' | 'customers' | 'investments' | 'group-buys' | 'reviews' | 'audit' | 'admins' | 'payments' | 'messages' | 'settings';
 
 export default function AdminDashboard() {
   const { 
@@ -26,7 +26,8 @@ export default function AdminDashboard() {
     updateVendorStatus, deleteUserAdmin, deleteProductAdmin, deleteReviewAdmin, updateReviewStatusAdmin, updateOrderStatusAdmin, recalculateTopRated, formatPrice,
     updateUserRole, updateUserStatus, cancelGroupPurchaseAdmin,
     vendorApplications, reviewVendorApplication,
-    categories, addCategory, updateCategory, deleteCategory
+    categories, addCategory, updateCategory, deleteCategory,
+    systemConfig, updateSystemConfig
   } = useAppContext();
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
@@ -52,7 +53,9 @@ export default function AdminDashboard() {
   });
 
   useEffect(() => {
-    if (currentUser?.role === 'admin' || currentUser?.email === 'bushraanwar854@gmail.com') {
+    if (currentUser?.role === 'admin' || 
+        currentUser?.email === 'bushraanwar854@gmail.com' || 
+        currentUser?.email === 'halalmarketonlineofficial@gmail.com') {
       fetchAdminStats();
       fetchAdminVendors();
       fetchAdminProducts();
@@ -65,7 +68,11 @@ export default function AdminDashboard() {
     }
   }, [currentUser]);
 
-  if (!currentUser || (currentUser.role !== 'admin' && currentUser.email !== 'bushraanwar854@gmail.com')) {
+  if (!currentUser || (
+    currentUser.role !== 'admin' && 
+    currentUser.email !== 'bushraanwar854@gmail.com' && 
+    currentUser.email !== 'halalmarketonlineofficial@gmail.com'
+  )) {
     return <Navigate to="/" />;
   }
 
@@ -122,7 +129,7 @@ export default function AdminDashboard() {
     (o.customerName || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const isSuperAdmin = currentUser?.email === 'bushraanwar854@gmail.com';
+  const isSuperAdmin = currentUser?.email === 'bushraanwar854@gmail.com' || currentUser?.email === 'halalmarketonlineofficial@gmail.com';
 
   const getPaymentStatusDisplay = (status: PaymentStatus) => {
     switch (status) {
@@ -208,7 +215,7 @@ export default function AdminDashboard() {
           </div>
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Control Center</h1>
-            {currentUser?.email === 'bushraanwar854@gmail.com' && (
+            {isSuperAdmin && (
               <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-[10px] font-black uppercase tracking-widest border border-amber-200 flex items-center gap-1">
                 <Award className="w-3 h-3" /> Super Admin
               </span>
@@ -218,7 +225,7 @@ export default function AdminDashboard() {
         </div>
         
         <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
-          {(['overview', 'vendor-applications', 'vendors', 'products', 'categories', 'orders', 'customers', 'investments', 'group-buys', 'reviews', 'audit', 'admins'] as AdminTab[]).map((tab) => {
+          {(['overview', 'vendor-applications', 'vendors', 'products', 'categories', 'orders', 'customers', 'investments', 'group-buys', 'reviews', 'audit', 'admins', 'settings'] as AdminTab[]).map((tab) => {
             if (tab === 'admins' && !isSuperAdmin) return null;
             return (
               <button
@@ -1452,7 +1459,7 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end gap-2">
-                          {admin.email !== 'bushraanwar854@gmail.com' && (
+                          {admin.email !== 'bushraanwar854@gmail.com' && admin.email !== 'halalmarketonlineofficial@gmail.com' && (
                             <>
                               {admin.status !== 'suspended' ? (
                                 <button 
@@ -1561,6 +1568,87 @@ export default function AdminDashboard() {
                 >
                   Confirm Rejection
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {activeTab === 'settings' && (
+        <div className="space-y-8">
+          <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 bg-emerald-100 rounded-xl text-emerald-600">
+                <CreditCard className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Payment Configuration</h2>
+                <p className="text-sm text-gray-500">Manage global payment methods and online gateways.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-6">
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                  <div>
+                    <h3 className="font-bold text-gray-900">Online Payments (Credit/Debit Card)</h3>
+                    <p className="text-xs text-gray-500">Global toggle for all online payment gateways.</p>
+                  </div>
+                  <button
+                    onClick={() => updateSystemConfig({ onlinePaymentsEnabled: !systemConfig?.onlinePaymentsEnabled })}
+                    className={`w-12 h-6 rounded-full transition-colors relative ${systemConfig?.onlinePaymentsEnabled ? 'bg-emerald-600' : 'bg-gray-300'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${systemConfig?.onlinePaymentsEnabled ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
+
+                <div className="p-6 border border-gray-100 rounded-xl space-y-4">
+                  <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" /> Available Gateways
+                  </h3>
+                  <p className="text-xs text-gray-500 mb-4">Enable specific gateways. If any are enabled, the "Credit/Debit Card" option will appear at checkout.</p>
+                  
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-700">Stripe Integration</span>
+                      <button
+                        onClick={() => updateSystemConfig({ stripeEnabled: !systemConfig?.stripeEnabled })}
+                        className={`w-10 h-5 rounded-full transition-colors relative ${systemConfig?.stripeEnabled ? 'bg-emerald-600' : 'bg-gray-300'}`}
+                      >
+                        <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${systemConfig?.stripeEnabled ? 'left-5.5' : 'left-0.5'}`} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-700">PayPal Integration</span>
+                      <button
+                        onClick={() => updateSystemConfig({ paypalEnabled: !systemConfig?.paypalEnabled })}
+                        className={`w-10 h-5 rounded-full transition-colors relative ${systemConfig?.paypalEnabled ? 'bg-emerald-600' : 'bg-gray-300'}`}
+                      >
+                        <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${systemConfig?.paypalEnabled ? 'left-5.5' : 'left-0.5'}`} />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-700">2Checkout Integration</span>
+                      <button
+                        onClick={() => updateSystemConfig({ twoCheckoutEnabled: !systemConfig?.twoCheckoutEnabled })}
+                        className={`w-10 h-5 rounded-full transition-colors relative ${systemConfig?.twoCheckoutEnabled ? 'bg-emerald-600' : 'bg-gray-300'}`}
+                      >
+                        <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${systemConfig?.twoCheckoutEnabled ? 'left-5.5' : 'left-0.5'}`} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
+                <h3 className="font-bold text-blue-900 mb-2 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" /> Security Note
+                </h3>
+                <p className="text-sm text-blue-800 leading-relaxed">
+                  Online payments require valid API keys configured in the system environment. 
+                  Enabling these methods without proper configuration will result in payment failures.
+                  The "Credit/Debit Card" option is automatically optimized for security and follows 
+                  industry standards for data handling.
+                </p>
               </div>
             </div>
           </div>
