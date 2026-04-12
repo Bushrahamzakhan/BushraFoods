@@ -67,7 +67,7 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isAuthenticated() && 
-             request.auth.token.email == "bushraanwar854@gmail.com" &&
+             (request.auth.token.email == "bushraanwar854@gmail.com" || request.auth.token.email == "halalmarketonlineofficial@gmail.com") &&
              request.auth.token.email_verified == true;
     }
 
@@ -92,7 +92,7 @@ service cloud.firestore {
     }
 
     function isValidUrl(url) {
-      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:image/.*"));
     }
 
     function hasOnlyAllowedFields(fields) {
@@ -117,17 +117,17 @@ service cloud.firestore {
 
     function isValidProduct(data) {
       return data.vendorId is string && data.vendorId.size() <= 100 &&
-             data.vendorName is string && data.vendorName.size() <= 200 &&
+             (data.vendorName == null || (data.vendorName is string && data.vendorName.size() <= 200)) &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
              data.description is string && data.description.size() <= 5000 &&
              data.price is number && data.price >= 0 &&
              data.currency is string && data.currency.size() <= 10 &&
              data.category is string && data.category.size() <= 100 &&
-             data.imageUrl is string && data.imageUrl.size() <= 1000 && isValidUrl(data.imageUrl) &&
+             data.imageUrl is string && data.imageUrl.size() <= 1000000 && isValidUrl(data.imageUrl) &&
              data.stock is number && data.stock >= 0 &&
              data.isHalalCertified is bool &&
              data.availabilityScope in ['global', 'country', 'local'] &&
-             (data.createdAt is timestamp || data.createdAt is string);
+             (data.createdAt is timestamp || data.createdAt is string || data.createdAt == null);
     }
 
     function isValidOrder(data) {

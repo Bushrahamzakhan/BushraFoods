@@ -1745,7 +1745,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const addProduct = async (product: Omit<Product, 'id' | 'vendorId' | 'vendorName'>) => {
-    if (!currentUser || currentUser.role !== 'vendor') return;
+    const isSuperAdmin = currentUser?.email === 'bushraanwar854@gmail.com' || currentUser?.email === 'halalmarketonlineofficial@gmail.com';
+    if (!currentUser || (currentUser.role !== 'vendor' && currentUser.role !== 'admin' && !isSuperAdmin)) return;
     try {
       const newProduct = cleanData({
         ...product,

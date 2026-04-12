@@ -165,7 +165,8 @@ export default function VendorDashboard() {
   };
   const [passwordSuccess, setPasswordSuccess] = useState(false);
 
-  if (!currentUser || currentUser.role !== 'vendor') {
+  const isSuperAdmin = currentUser?.email === 'bushraanwar854@gmail.com' || currentUser?.email === 'halalmarketonlineofficial@gmail.com';
+  if (!currentUser || (currentUser.role !== 'vendor' && currentUser.role !== 'admin' && !isSuperAdmin)) {
     return <Navigate to="/login" />;
   }
 
