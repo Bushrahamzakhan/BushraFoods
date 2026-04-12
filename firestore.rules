@@ -109,21 +109,21 @@ service cloud.firestore {
 
     function isValidUser(data) {
       return data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
-             data.email is string && isValidEmail(data.email) &&
+             data.email is string && data.email.size() <= 200 && isValidEmail(data.email) &&
              data.role in ['buyer', 'seller', 'admin', 'vendor', 'customer', 'investor', 'moderator', 'support'] &&
-             data.status is string &&
+             data.status is string && data.status.size() <= 50 &&
              (data.createdAt is timestamp || data.createdAt is string || data.createdAt == null);
     }
 
     function isValidProduct(data) {
-      return data.vendorId is string &&
-             data.vendorName is string &&
+      return data.vendorId is string && data.vendorId.size() <= 100 &&
+             data.vendorName is string && data.vendorName.size() <= 200 &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
              data.description is string && data.description.size() <= 5000 &&
              data.price is number && data.price >= 0 &&
-             data.currency is string &&
-             data.category is string &&
-             data.imageUrl is string && isValidUrl(data.imageUrl) &&
+             data.currency is string && data.currency.size() <= 10 &&
+             data.category is string && data.category.size() <= 100 &&
+             data.imageUrl is string && data.imageUrl.size() <= 1000 && isValidUrl(data.imageUrl) &&
              data.stock is number && data.stock >= 0 &&
              data.isHalalCertified is bool &&
              data.availabilityScope in ['global', 'country', 'local'] &&
@@ -131,15 +131,15 @@ service cloud.firestore {
     }
 
     function isValidOrder(data) {
-      return data.customerId is string &&
-             data.vendorId is string &&
-             data.status is string &&
+      return data.customerId is string && data.customerId.size() <= 100 &&
+             data.vendorId is string && data.vendorId.size() <= 100 &&
+             data.status is string && data.status.size() <= 50 &&
              (data.createdAt is timestamp || data.createdAt is string || data.createdAt == null);
     }
 
     function isValidReview(data) {
-      return data.userId is string &&
-             data.userName is string &&
+      return data.userId is string && data.userId.size() <= 100 &&
+             data.userName is string && data.userName.size() <= 200 &&
              data.rating is number && data.rating >= 1 && data.rating <= 5 &&
              data.comment is string && data.comment.size() <= 2000 &&
              data.isVerifiedPurchase is bool &&
@@ -214,7 +214,7 @@ service cloud.firestore {
       allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
 
       match /messages/{messageId} {
-        allow read: if isAuthenticated() && (isAdmin() || request.auth.uid == resource.data.senderId || request.auth.uid == resource.data.receiverId);
+        allow read: if isAuthenticated() && (isAdmin() || conversationId.matches(".*" + request.auth.uid + ".*"));
         allow create: if isAuthenticated() && request.auth.uid == request.resource.data.senderId;
       }
     }
@@ -259,6 +259,12 @@ service cloud.firestore {
     match /categories/{categoryId} {
       allow read: if true;
       allow create, update, delete: if isAdmin();
+    }
+
+    match /media/{mediaId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin() || isOwner(resource.data.uploadedBy);
     }
 
     match /auditLogs/{logId} {

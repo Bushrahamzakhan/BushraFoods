@@ -26,6 +26,8 @@ export default function ImageUploadField({
   const [mode, setMode] = useState<'url' | 'upload'>(value && !value.includes('firebasestorage') ? 'url' : 'upload');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -42,6 +44,9 @@ export default function ImageUploadField({
       return;
     }
 
+    // Instant preview for perceived performance
+    const localUrl = URL.createObjectURL(file);
+    setPreviewUrl(localUrl);
     setIsUploading(true);
     setUploadProgress(0);
     setUploadError(null);
@@ -51,8 +56,10 @@ export default function ImageUploadField({
         setUploadProgress(Math.round(progress));
       });
       onChange(url);
+      setPreviewUrl(null); // Clear local preview once uploaded
     } catch (error) {
       setUploadError('Failed to upload image. Please try again.');
+      setPreviewUrl(null);
       console.error(error);
     } finally {
       setIsUploading(false);
@@ -62,6 +69,7 @@ export default function ImageUploadField({
 
   const clearImage = () => {
     onChange('');
+    setPreviewUrl(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -102,29 +110,17 @@ export default function ImageUploadField({
 
       {mode === 'upload' ? (
         <div className="space-y-3">
-          {!value ? (
+          {!value && !previewUrl ? (
             <div 
               onClick={() => fileInputRef.current?.click()}
               className={`border-2 border-dashed border-gray-200 rounded-xl p-8 flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-emerald-500 hover:bg-emerald-50 transition-all ${
                 isUploading ? 'pointer-events-none opacity-50' : ''
               }`}
             >
-              {isUploading ? (
-                <div className="flex flex-col items-center gap-2 w-full max-w-[200px]">
-                  <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-emerald-500 transition-all duration-300" 
-                      style={{ width: `${uploadProgress}%` }}
-                    />
-                  </div>
-                  <p className="text-xs font-bold text-emerald-600">{uploadProgress}% Uploaded</p>
-                </div>
-              ) : (
-                <Upload className="w-8 h-8 text-gray-300" />
-              )}
+              <Upload className="w-8 h-8 text-gray-300" />
               <div className="text-center">
                 <p className="text-sm font-bold text-gray-900">
-                  {isUploading ? 'Uploading...' : 'Click to upload image'}
+                  Click to upload image
                 </p>
                 <p className="text-xs text-gray-500 mt-1">PNG, JPG, GIF up to 5MB</p>
               </div>
@@ -139,29 +135,47 @@ export default function ImageUploadField({
           ) : (
             <div className="relative group rounded-xl overflow-hidden border border-gray-100">
               <img 
-                src={value} 
+                src={previewUrl || value} 
                 alt="Preview" 
                 className="w-full h-48 object-cover"
                 referrerPolicy="no-referrer"
               />
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-2 bg-white text-gray-900 rounded-full hover:bg-emerald-600 hover:text-white transition-colors"
-                  title="Change Image"
-                >
-                  <Upload className="w-5 h-5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={clearImage}
-                  className="p-2 bg-white text-red-600 rounded-full hover:bg-red-600 hover:text-white transition-colors"
-                  title="Remove Image"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+              {isUploading && (
+                <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-3 px-4">
+                  <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-emerald-500 transition-all duration-300" 
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <div className="flex flex-col items-center gap-1">
+                    <p className="text-[10px] font-bold text-white uppercase tracking-widest">
+                      {uploadProgress < 10 ? 'Preparing...' : uploadProgress < 30 ? 'Compressing...' : uploadProgress < 95 ? 'Uploading...' : 'Finalizing...'}
+                    </p>
+                    <p className="text-lg font-black text-white">{uploadProgress}%</p>
+                  </div>
+                </div>
+              )}
+              {!isUploading && (
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-2 bg-white text-gray-900 rounded-full hover:bg-emerald-600 hover:text-white transition-colors"
+                    title="Change Image"
+                  >
+                    <Upload className="w-5 h-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearImage}
+                    className="p-2 bg-white text-red-600 rounded-full hover:bg-red-600 hover:text-white transition-colors"
+                    title="Remove Image"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              )}
               <input 
                 type="file" 
                 ref={fileInputRef}

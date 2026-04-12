@@ -33,6 +33,7 @@ export default function VendorShop() {
               alt={vendor.storeName || vendor.name} 
               className="w-full h-full object-cover"
               referrerPolicy="no-referrer"
+              loading="lazy"
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-emerald-300">
@@ -49,6 +50,7 @@ export default function VendorShop() {
                 alt={vendor.storeName || vendor.name} 
                 className="w-32 h-32 rounded-full border-4 border-white object-cover bg-white shadow-md"
                 referrerPolicy="no-referrer"
+                loading="lazy"
               />
             ) : (
               <div className="w-32 h-32 rounded-full border-4 border-white bg-emerald-600 flex items-center justify-center shadow-md">
@@ -113,6 +115,7 @@ export default function VendorShop() {
                   alt={product.name} 
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   referrerPolicy="no-referrer"
+                  loading="lazy"
                 />
                 {product.isHalalCertified && (
                   <div className="absolute top-2 left-2 bg-emerald-600 text-white px-2 py-1 rounded text-xs font-bold shadow-sm">

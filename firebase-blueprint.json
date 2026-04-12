@@ -280,6 +280,21 @@
       },
       "required": ["id", "name", "isActive", "createdAt"]
     },
+    "Media": {
+      "title": "Media",
+      "description": "Image data stored as Base64",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "url": { "type": "string" },
+        "folder": { "type": "string" },
+        "uploadedBy": { "type": "string" },
+        "uploadedByEmail": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "fileName": { "type": "string" }
+      },
+      "required": ["id", "url", "uploadedBy", "createdAt"]
+    },
     "AuditLog": {
       "title": "AuditLog",
       "description": "System audit log",
@@ -312,6 +327,7 @@
     "/investorWallets/{userId}": { "schema": "InvestorWallet", "description": "User investment wallet document" },
     "/vendorApplications/{applicationId}": { "schema": "VendorApplication", "description": "Vendor application document" },
     "/categories/{categoryId}": { "schema": "Category", "description": "Product category document" },
+    "/media/{mediaId}": { "schema": "Media", "description": "Media storage document" },
     "/auditLogs/{logId}": { "schema": "AuditLog", "description": "System audit log document" }
   }
 }

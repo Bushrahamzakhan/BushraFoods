@@ -13,6 +13,8 @@ export default function ChatWindow({ otherUserId, onClose }: ChatWindowProps) {
   const { currentUser, activeMessages, fetchMessages, sendMessage, conversations, setActiveChatUserId, vendors, uploadImage } = useAppContext();
   const [message, setMessage] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [optimisticImage, setOptimisticImage] = useState<{ id: string, url: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
@@ -36,14 +38,28 @@ export default function ChatWindow({ otherUserId, onClose }: ChatWindowProps) {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Optimistic UI: Create a temporary message with a local preview
+    const tempId = `temp-${Date.now()}`;
+    const localUrl = URL.createObjectURL(file);
+    
+    // We can't easily inject into the messages list because it's managed by AppContext/Firestore
+    // but we can set a local state to show the "uploading" message at the bottom
+    setOptimisticImage({ id: tempId, url: localUrl });
     setIsUploading(true);
+    setUploadProgress(0);
+
     try {
-      const url = await uploadImage(file, 'chat');
+      const url = await uploadImage(file, 'chat', (progress) => {
+        setUploadProgress(Math.round(progress));
+      });
       await sendMessage(otherUserId, '', url);
+      setOptimisticImage(null);
     } catch (error) {
       console.error("Failed to upload image:", error);
+      setOptimisticImage(null);
     } finally {
       setIsUploading(false);
+      setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -96,6 +112,7 @@ export default function ChatWindow({ otherUserId, onClose }: ChatWindowProps) {
                       className="max-w-full h-auto max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity"
                       onClick={() => window.open(msg.imageUrl, '_blank')}
                       referrerPolicy="no-referrer"
+                      loading="lazy"
                     />
                   </div>
                 )}
@@ -107,6 +124,34 @@ export default function ChatWindow({ otherUserId, onClose }: ChatWindowProps) {
             </div>
           );
         })}
+
+        {/* Optimistic Image Preview */}
+        {optimisticImage && (
+          <div className="flex justify-end">
+            <div className="max-w-[80%] px-4 py-2 rounded-2xl text-sm bg-green-600/50 text-white rounded-tr-none relative overflow-hidden">
+              <div className="mb-2 rounded-lg overflow-hidden border border-white/10 relative">
+                <img 
+                  src={optimisticImage.url} 
+                  alt="Uploading..." 
+                  className="max-w-full h-auto max-h-60 object-cover opacity-50"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/20">
+                  <div className="w-12 h-12 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <div className="w-2/3 h-1 bg-white/20 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-white transition-all duration-300" 
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] font-bold text-white">{uploadProgress}%</p>
+                </div>
+              </div>
+              <p className="text-[10px] mt-1 text-green-100 italic">Sending...</p>
+            </div>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 

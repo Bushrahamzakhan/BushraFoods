@@ -177,6 +177,7 @@ export default function ProductDetails() {
               alt={product.name} 
               className="w-full h-full object-contain"
               referrerPolicy="no-referrer"
+              loading="lazy"
             />
             <div className="absolute top-4 left-4 flex flex-col gap-2">
               {product.isHalalCertified && (
@@ -212,7 +213,7 @@ export default function ProductDetails() {
                     activeImageIndex === idx ? 'border-green-600 shadow-sm' : 'border-transparent opacity-70 hover:opacity-100'
                   }`}
                 >
-                  <img src={img} alt={`${product.name} ${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  <img src={img} alt={`${product.name} ${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
                 </button>
               ))}
             </div>
@@ -351,7 +352,7 @@ export default function ProductDetails() {
                   {activeGroup.members?.map((member: any) => (
                     <div key={member.id} className="flex items-center gap-2 bg-white/60 backdrop-blur-sm px-2 py-1 rounded-full border border-emerald-100" title={member.customerName}>
                       {member.customerProfileImage ? (
-                        <img src={member.customerProfileImage} alt={member.customerName} className="w-6 h-6 rounded-full object-cover" referrerPolicy="no-referrer" />
+                        <img src={member.customerProfileImage} alt={member.customerName} className="w-6 h-6 rounded-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
                       ) : (
                         <div className="w-6 h-6 rounded-full bg-emerald-200 flex items-center justify-center text-[10px] font-bold text-emerald-700 uppercase">
                           {member.customerName.charAt(0)}
@@ -645,7 +646,7 @@ export default function ProductDetails() {
           {products.filter(p => p.vendorId === product.vendorId && p.id !== product.id).slice(0, 4).map(p => (
             <Link key={p.id} to={`/product/${p.id}`} className="group">
               <div className="bg-white rounded-lg border border-gray-100 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                <img src={p.imageUrl} alt={p.name} className="w-full h-32 object-cover group-hover:scale-105 transition-transform" referrerPolicy="no-referrer" />
+                <img src={p.imageUrl} alt={p.name} className="w-full h-32 object-cover group-hover:scale-105 transition-transform" referrerPolicy="no-referrer" loading="lazy" />
                 <div className="p-3">
                   <h4 className="font-medium text-gray-900 line-clamp-1 group-hover:text-green-600">{p.name}</h4>
                   <p className="text-green-700 font-bold mt-1">{formatPrice(p.price, p.currency)}</p>

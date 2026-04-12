@@ -277,6 +277,7 @@ export default function CustomerDashboard() {
                 alt={currentUser.name} 
                 className="w-20 h-20 rounded-full object-cover border-4 border-green-50"
                 referrerPolicy="no-referrer"
+                loading="lazy"
               />
               <div className="absolute bottom-0 right-0 w-5 h-5 bg-green-500 border-2 border-white rounded-full"></div>
             </div>

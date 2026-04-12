@@ -6,6 +6,7 @@ import {
   ref, 
   uploadBytes, 
   uploadBytesResumable,
+  uploadString,
   getDownloadURL 
 } from 'firebase/storage';
 import imageCompression from 'browser-image-compression';
@@ -1053,62 +1054,79 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const uploadImage = async (file: File, folder: string, onProgress?: (progress: number) => void): Promise<string> => {
-    if (!currentUser) throw new Error("Authentication required for upload");
-    
-    try {
-      // Image compression
-      const options = {
-        maxSizeMB: 0.8,
-        maxWidthOrHeight: 1200,
-        useWebWorker: true
-      };
+    const uploadWithRetry = async (attempt: number = 1): Promise<string> => {
+      if (!currentUser) throw new Error("Authentication required for upload");
       
-      const compressedFile = await imageCompression(file, options);
+      console.log(`[Upload] Starting attempt ${attempt} for ${file.name}`);
       
-      const fileExtension = file.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExtension}`;
-      const storageRef = ref(storage, `${folder}/${fileName}`);
-      
-      return new Promise((resolve, reject) => {
-        const uploadTask = uploadBytesResumable(storageRef, compressedFile);
+      try {
+        if (onProgress) onProgress(5);
+
+        // ULTRA-AGGRESSIVE COMPRESSION (Target < 50KB for Firestore stability)
+        const compressImage = async (imgFile: File): Promise<string> => {
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const img = new Image();
+              img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const MAX_SIZE = 400; // Small size for guaranteed Firestore storage
+                let w = img.width;
+                let h = img.height;
+                if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } }
+                else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
+                canvas.width = w; canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx?.drawImage(img, 0, 0, w, h);
+                // Use JPEG 0.5 for very small file size
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+                resolve(dataUrl);
+              };
+              img.onerror = () => reject(new Error("Image load failed"));
+              img.src = e.target?.result as string;
+            };
+            reader.onerror = () => reject(new Error("File read failed"));
+            reader.readAsDataURL(imgFile);
+          });
+        };
+
+        if (onProgress) onProgress(15);
+        console.log(`[Upload] Compressing image...`);
+        const dataUrl = await compressImage(file);
+        console.log(`[Upload] Compression complete. Size: ${Math.round(dataUrl.length / 1024)} KB`);
+        if (onProgress) onProgress(35);
+
+        // BYPASS FIREBASE STORAGE - Store directly in Firestore
+        // This is 100% reliable as long as the user can save other data
+        console.log(`[Upload] Saving to Database...`);
         
-        uploadTask.on('state_changed', 
-          (snapshot) => {
-            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            if (onProgress) onProgress(progress);
-          }, 
-          (error) => {
-            console.error("Upload error:", error);
-            reject(error);
-          }, 
-          async () => {
-            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-            
-            // Record media in Firestore for admin moderation
-            try {
-              await addDoc(collection(db, 'media'), {
-                url: downloadURL,
-                path: `${folder}/${fileName}`,
-                folder,
-                uploadedBy: currentUser.id,
-                uploadedByEmail: currentUser.email,
-                createdAt: serverTimestamp(),
-                fileSize: compressedFile.size,
-                fileName: file.name
-              });
-            } catch (e) {
-              console.error("Error recording media:", e);
-              // Don't fail the upload if recording fails
-            }
-            
-            resolve(downloadURL);
-          }
-        );
-      });
-    } catch (error) {
-      console.error("Error uploading image:", error);
-      throw error;
-    }
+        const mediaDoc = await addDoc(collection(db, 'media'), {
+          url: dataUrl, // The actual image data is stored here
+          folder,
+          uploadedBy: currentUser.id,
+          uploadedByEmail: currentUser.email,
+          createdAt: serverTimestamp(),
+          fileName: file.name,
+          type: 'firestore_blob'
+        });
+
+        console.log(`[Upload] Success! Document ID: ${mediaDoc.id}`);
+        if (onProgress) onProgress(100);
+        
+        return dataUrl; // Return the dataUrl so it can be used as an image src immediately
+      } catch (error) {
+        console.error(`[Upload] Attempt ${attempt} failed:`, error);
+        if (attempt < 3) {
+          const delay = attempt * 2000;
+          console.log(`[Upload] Retrying in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+          return uploadWithRetry(attempt + 1);
+        }
+        throw error;
+      }
+    };
+
+    return uploadWithRetry();
   };
 
   const recalculateTopRated = async () => {

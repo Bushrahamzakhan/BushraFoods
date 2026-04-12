@@ -44,6 +44,7 @@ export default function ChatList({ onSelect, activeUserId }: ChatListProps) {
                     alt={conv.otherUserName} 
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
+                    loading="lazy"
                   />
                 ) : (
                   <UserIcon className="w-6 h-6 text-green-600" />

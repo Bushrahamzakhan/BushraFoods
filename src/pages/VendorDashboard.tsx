@@ -798,7 +798,7 @@ export default function VendorDashboard() {
                   <tr key={sub.id}>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <img src={sub.productImageUrl} alt={sub.productName} className="w-8 h-8 rounded-lg object-cover" />
+                        <img src={sub.productImageUrl} alt={sub.productName} className="w-8 h-8 rounded-lg object-cover" referrerPolicy="no-referrer" loading="lazy" />
                         <span className="text-sm font-medium text-gray-900">{sub.productName}</span>
                       </div>
                     </td>
@@ -1116,7 +1116,7 @@ export default function VendorDashboard() {
             {groupPurchases.filter(g => g.vendorId === currentUser.id).map(group => (
               <div key={group.id} className="border border-gray-100 rounded-2xl p-6 space-y-4">
                 <div className="flex items-center gap-4">
-                  <img src={group.productImageUrl} alt={group.productName} className="w-12 h-12 rounded-xl object-cover" />
+                  <img src={group.productImageUrl} alt={group.productName} className="w-12 h-12 rounded-xl object-cover" referrerPolicy="no-referrer" loading="lazy" />
                   <div>
                     <h3 className="font-bold text-gray-900 line-clamp-1">{group.productName}</h3>
                     <p className="text-xs text-gray-500">Ends: {ensureDate(group.expiresAt).toLocaleDateString()}</p>
@@ -1839,7 +1839,7 @@ export default function VendorDashboard() {
                     {method.qrCodeUrl && (
                       <div className="mt-3">
                         <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">QR Code</p>
-                        <img src={method.qrCodeUrl} alt="QR Code" className="w-32 h-32 rounded border border-gray-200 bg-white p-1" />
+                        <img src={method.qrCodeUrl} alt="QR Code" className="w-32 h-32 rounded border border-gray-200 bg-white p-1" referrerPolicy="no-referrer" loading="lazy" />
                       </div>
                     )}
                   </div>

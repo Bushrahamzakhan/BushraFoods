@@ -313,6 +313,7 @@ export default function ReviewSection({ productId, vendorId }: ReviewSectionProp
                         alt={review.userName} 
                         className="w-14 h-14 rounded-2xl object-cover ring-4 ring-emerald-50"
                         referrerPolicy="no-referrer"
+                        loading="lazy"
                       />
                     ) : (
                       <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600 ring-4 ring-emerald-50">
