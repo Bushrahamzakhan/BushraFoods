@@ -26,6 +26,7 @@ export default function AdminDashboard() {
     updateVendorStatus, deleteUserAdmin, deleteProductAdmin, deleteReviewAdmin, updateReviewStatusAdmin, updateOrderStatusAdmin, recalculateTopRated, formatPrice,
     updateUserRole, updateUserStatus, cancelGroupPurchaseAdmin,
     vendorApplications, reviewVendorApplication,
+    approveInvestmentOpportunity, rejectInvestmentOpportunity,
     categories, addCategory, updateCategory, deleteCategory,
     systemConfig, updateSystemConfig
   } = useAppContext();
@@ -1055,22 +1056,35 @@ export default function AdminDashboard() {
             )}
 
             {activeTab === 'messages' && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[600px] p-6">
-                <div className="lg:col-span-1 overflow-y-auto">
-                  <ChatList onSelect={setSelectedChatUserId} activeUserId={selectedChatUserId || undefined} />
-                </div>
-                <div className="lg:col-span-2 h-full">
-                  {selectedChatUserId ? (
-                    <ChatWindow otherUserId={selectedChatUserId} onClose={() => setSelectedChatUserId(null)} />
-                  ) : (
-                    <div className="h-full bg-white rounded-2xl border border-gray-100 flex flex-col items-center justify-center text-center p-12">
-                      <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-600 mb-4">
-                        <MessageSquare className="w-8 h-8" />
-                      </div>
-                      <h3 className="text-xl font-bold text-gray-900 mb-2">Select a conversation</h3>
-                      <p className="text-gray-500">Pick a user from the list to start chatting.</p>
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-gray-100 h-[calc(100vh-250px)] min-h-[500px] max-h-[800px]">
+                  {/* Chat List - Hidden on mobile if a chat is selected */}
+                  <div className={`lg:col-span-1 flex flex-col h-full ${selectedChatUserId ? 'hidden lg:flex' : 'flex'}`}>
+                    <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+                      <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4 text-emerald-600" />
+                        Conversations
+                      </h3>
                     </div>
-                  )}
+                    <div className="flex-grow overflow-y-auto">
+                      <ChatList onSelect={setSelectedChatUserId} activeUserId={selectedChatUserId || undefined} />
+                    </div>
+                  </div>
+
+                  {/* Chat Window - Hidden on mobile if no chat is selected */}
+                  <div className={`lg:col-span-2 h-full flex flex-col ${!selectedChatUserId ? 'hidden lg:flex' : 'flex'}`}>
+                    {selectedChatUserId ? (
+                      <ChatWindow otherUserId={selectedChatUserId} onClose={() => setSelectedChatUserId(null)} />
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-center p-12 bg-gray-50/30">
+                        <div className="w-20 h-20 bg-white rounded-3xl shadow-sm flex items-center justify-center text-emerald-600 mb-6 border border-gray-100">
+                          <MessageSquare className="w-10 h-10" />
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-900 mb-2">Admin Messages</h3>
+                        <p className="text-gray-500 max-w-xs mx-auto">Select a user from the list to start a conversation.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -1179,6 +1193,7 @@ export default function AdminDashboard() {
                     <th className="px-6 py-4 font-bold">Raised</th>
                     <th className="px-6 py-4 font-bold">Progress</th>
                     <th className="px-6 py-4 font-bold">Status</th>
+                    <th className="px-6 py-4 font-bold text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -1200,10 +1215,46 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
-                          opp.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'
+                          opp.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 
+                          opp.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                          opp.status === 'completed' ? 'bg-blue-100 text-blue-700' :
+                          'bg-red-100 text-red-700'
                         }`}>
                           {opp.status}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end gap-2">
+                          {opp.status === 'pending' && (
+                            <>
+                              <button 
+                                onClick={async () => {
+                                  await approveInvestmentOpportunity(opp.id);
+                                  showSuccess('Investment opportunity approved!');
+                                  fetchAdminInvestments();
+                                }}
+                                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg"
+                                title="Approve"
+                              >
+                                <CheckCircle className="w-5 h-5" />
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  const reason = prompt('Enter rejection reason:');
+                                  if (reason) {
+                                    rejectInvestmentOpportunity(opp.id, reason);
+                                    showSuccess('Investment opportunity rejected.');
+                                    fetchAdminInvestments();
+                                  }
+                                }}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                                title="Reject"
+                              >
+                                <XCircle className="w-5 h-5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

@@ -248,6 +248,8 @@ interface AppContextType {
   loading: boolean;
   fetchInvestmentOpportunities: () => Promise<void>;
   createInvestmentOpportunity: (data: any) => Promise<void>;
+  approveInvestmentOpportunity: (opportunityId: string) => Promise<void>;
+  rejectInvestmentOpportunity: (opportunityId: string, reason: string) => Promise<void>;
   invest: (opportunityId: string, tierId: string) => Promise<void>;
   fetchMyInvestments: () => Promise<void>;
   fetchVendorInvestments: () => Promise<void>;
@@ -1096,7 +1098,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const uploadImage = async (file: File, folder: string, onProgress?: (progress: number) => void): Promise<string> => {
+  const uploadImage = useCallback(async (file: File, folder: string, onProgress?: (progress: number) => void): Promise<string> => {
     const uploadWithRetry = async (attempt: number = 1): Promise<string> => {
       if (!currentUser) throw new Error("Authentication required for upload");
       
@@ -1170,7 +1172,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     };
 
     return uploadWithRetry();
-  };
+  }, [currentUser?.id, currentUser?.email]);
 
   const recalculateTopRated = async () => {
     if (currentUser?.role !== 'admin' && currentUser?.email !== 'bushraanwar854@gmail.com') return;
@@ -1282,7 +1284,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         ...data,
         vendorId: currentUser.id,
         currentFunding: 0,
-        status: 'active',
+        status: 'pending',
         createdAt: serverTimestamp()
       });
       await addDoc(collection(db, 'investmentOpportunities'), newOpportunity);
@@ -1301,6 +1303,65 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       fetchInvestmentOpportunities();
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, 'investmentOpportunities');
+    }
+  };
+
+  const approveInvestmentOpportunity = async (opportunityId: string) => {
+    if (!currentUser || currentUser.role !== 'admin') return;
+    try {
+      const oppRef = doc(db, 'investmentOpportunities', opportunityId);
+      const oppSnap = await getDoc(oppRef);
+      if (!oppSnap.exists()) return;
+      const oppData = oppSnap.data();
+
+      await updateDoc(oppRef, {
+        status: 'active',
+        approvedAt: serverTimestamp(),
+        approvedBy: currentUser.id
+      });
+
+      // Notify Vendor
+      await sendNotification(
+        oppData.vendorId,
+        'Investment Opportunity Approved',
+        `Your investment opportunity for ${oppData.productName} has been approved and is now live.`,
+        'approval',
+        '/vendor?tab=investments'
+      );
+
+      fetchInvestmentOpportunities();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `investmentOpportunities/${opportunityId}`);
+    }
+  };
+
+  const rejectInvestmentOpportunity = async (opportunityId: string, reason: string) => {
+    if (!currentUser || currentUser.role !== 'admin') return;
+    try {
+      const oppRef = doc(db, 'investmentOpportunities', opportunityId);
+      const oppSnap = await getDoc(oppRef);
+      if (!oppSnap.exists()) return;
+      const oppData = oppSnap.data();
+
+      await updateDoc(oppRef, {
+        status: 'cancelled',
+        rejectionReason: reason,
+        rejectedAt: serverTimestamp(),
+        rejectedBy: currentUser.id
+      });
+
+      // Notify Vendor
+      await sendNotification(
+        oppData.vendorId,
+        'Investment Opportunity Rejected',
+        `Your investment opportunity for ${oppData.productName} was rejected. Reason: ${reason}`,
+        'approval',
+        '/vendor?tab=investments'
+      );
+
+      fetchInvestmentOpportunities();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, `investmentOpportunities/${opportunityId}`);
     }
   };
 
@@ -1448,13 +1509,45 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const docRef = await addDoc(collection(db, 'groupPurchases'), newGroup);
       fetchGroupPurchases();
 
-      if (isCompleted) {
-        // This is highly unlikely but for completeness:
-        // We would need to create orders here too if targetMembers was 1
-        // But usually targetMembers is at least 2.
+      // Create initial order for the creator so they can upload receipts
+      const newOrder = {
+        groupPurchaseId: docRef.id,
+        customerId: currentUser.id,
+        customerName: currentUser.name,
+        vendorId: product.vendorId,
+        vendorName: product.vendorName,
+        items: [{
+          productId: product.id,
+          productName: product.name,
+          price: product.groupPrice || product.price,
+          currency: product.currency,
+          quantity: 1,
+          selectedVariations: {},
+          imageUrl: product.imageUrl
+        }],
+        totalAmount: product.groupPrice || product.price,
+        currency: product.currency,
+        shippingDetails: shippingDetails,
+        paymentMethod: paymentMethod,
+        status: isCompleted ? 'pending' : 'awaiting_group',
+        paymentStatus: 'pending',
+        history: [{
+          id: Math.random().toString(36).substr(2, 9),
+          status: isCompleted ? 'pending' : 'awaiting_group',
+          description: isCompleted ? 'Group purchase completed, order created' : 'Joined group purchase, awaiting more members',
+          timestamp: ensureDate(new Date()).toISOString()
+        }],
+        createdAt: serverTimestamp()
+      };
+
+      try {
+        await addDoc(collection(db, 'orders'), newOrder);
+        fetchOrders();
+      } catch (e) {
+        handleFirestoreError(e, OperationType.CREATE, 'orders');
       }
 
-      return isCompleted;
+      return true; // Always return true now as we create the order immediately
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, 'groupPurchases');
       return false;
@@ -1496,55 +1589,76 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         throw e;
       }
 
-      if (isCompleted) {
-        // Create orders for all members
-        for (const member of newMembers) {
-          const product = products.find(p => p.id === groupData.productId);
-          if (!product) continue;
-
-          const newOrder = {
-            groupPurchaseId: groupId,
-            customerId: member.customerId,
-            customerName: member.customerName,
-            vendorId: groupData.vendorId,
-            vendorName: groupData.vendorName,
-            items: [{
-              productId: groupData.productId,
-              productName: groupData.productName,
-              price: groupData.price,
-              currency: groupData.currency,
-              quantity: 1,
-              selectedVariations: {},
-              imageUrl: product.imageUrl
-            }],
-            totalAmount: groupData.price,
+      // Create order for the new member immediately
+      const product = products.find(p => p.id === groupData.productId);
+      if (product) {
+        const newOrder = {
+          groupPurchaseId: groupId,
+          customerId: currentUser.id,
+          customerName: currentUser.name,
+          vendorId: groupData.vendorId,
+          vendorName: groupData.vendorName,
+          items: [{
+            productId: groupData.productId,
+            productName: groupData.productName,
+            price: groupData.price,
             currency: groupData.currency,
-            shippingDetails: member.shippingDetails,
-            paymentMethod: member.paymentMethod,
-            status: 'pending',
-            paymentStatus: 'pending',
-            history: [{
-              id: Math.random().toString(36).substr(2, 9),
-              status: 'pending',
-              description: 'Group purchase completed, order created',
-              timestamp: ensureDate(new Date()).toISOString()
-            }],
-            createdAt: serverTimestamp()
-          };
-          
-          try {
-            await addDoc(collection(db, 'orders'), newOrder);
-            
-            // Notify member
-            await sendNotification(
-              member.customerId,
-              'Group Buy Completed!',
-              `The group buy for ${groupData.productName} is now complete! Your order has been created.`,
-              'order',
-              '/dashboard?tab=orders'
-            );
-          } catch (e) {
-            handleFirestoreError(e, OperationType.CREATE, 'orders');
+            quantity: 1,
+            selectedVariations: {},
+            imageUrl: product.imageUrl
+          }],
+          totalAmount: groupData.price,
+          currency: groupData.currency,
+          shippingDetails: shippingDetails,
+          paymentMethod: paymentMethod,
+          status: isCompleted ? 'pending' : 'awaiting_group',
+          paymentStatus: 'pending',
+          history: [{
+            id: Math.random().toString(36).substr(2, 9),
+            status: isCompleted ? 'pending' : 'awaiting_group',
+            description: isCompleted ? 'Group purchase completed, order created' : 'Joined group purchase, awaiting more members',
+            timestamp: ensureDate(new Date()).toISOString()
+          }],
+          createdAt: serverTimestamp()
+        };
+
+        try {
+          await addDoc(collection(db, 'orders'), newOrder);
+        } catch (e) {
+          handleFirestoreError(e, OperationType.CREATE, 'orders');
+        }
+      }
+
+      if (isCompleted) {
+        // Update all existing orders for this group to 'pending' status
+        const groupOrders = orders.filter(o => o.groupPurchaseId === groupId);
+        for (const order of groupOrders) {
+          if (order.status === 'awaiting_group') {
+            try {
+              await updateDoc(doc(db, 'orders', order.id), {
+                status: 'pending',
+                history: [
+                  ...order.history,
+                  {
+                    id: Math.random().toString(36).substr(2, 9),
+                    status: 'pending',
+                    description: 'Group purchase completed, order is now active',
+                    timestamp: ensureDate(new Date()).toISOString()
+                  }
+                ]
+              });
+
+              // Notify member
+              await sendNotification(
+                order.customerId,
+                'Group Buy Completed!',
+                `The group buy for ${groupData.productName} is now complete! Your order is now active.`,
+                'order',
+                '/customer?tab=orders'
+              );
+            } catch (e) {
+              handleFirestoreError(e, OperationType.UPDATE, `orders/${order.id}`);
+            }
           }
         }
 
@@ -1572,13 +1686,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           'Joined Group Buy',
           `You have successfully joined the group buy for ${groupData.productName}.`,
           'order',
-          '/dashboard?tab=groups'
+          '/customer?tab=groups'
         );
       }
 
       fetchGroupPurchases();
       fetchOrders();
-      return isCompleted;
+      return true;
     } catch (e) {
       // This catch handles errors before the updateDoc or custom errors
       if (e instanceof Error && e.message === 'Group purchase is no longer open') {
@@ -1658,6 +1772,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           const data = doc.data();
           const otherUserId = data.participants.find((p: string) => p !== currentUser.id);
           return {
+            id: doc.id,
             otherUserId,
             otherUserName: data.participantNames[otherUserId],
             otherUserProfileImage: data.participantImages?.[otherUserId],
@@ -2119,7 +2234,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     // Handled by onSnapshot in useEffect
   };
 
-  const fetchMessages = (otherUserId: string) => {
+  const fetchMessages = useCallback((otherUserId: string) => {
     if (!currentUser) return () => {};
     setActiveChatUserId(otherUserId);
     
@@ -2143,21 +2258,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       try {
         const convSnap = await getDoc(convRef);
         if (convSnap.exists()) {
-          await updateDoc(convRef, {
-            [`unreadCounts.${currentUser.id}`]: 0
-          });
+          const data = convSnap.data();
+          // Only update if unread count is actually greater than 0 to save quota
+          if (data.unreadCounts?.[currentUser.id] > 0) {
+            await updateDoc(convRef, {
+              [`unreadCounts.${currentUser.id}`]: 0
+            });
+          }
         }
       } catch (e) {
-        // Ignore if we can't mark as read (e.g. conversation doesn't exist yet)
+        // Ignore if we can't mark as read (e.g. conversation doesn't exist yet or quota hit)
         console.warn("Could not mark conversation as read:", e);
       }
     };
     markAsRead();
 
     return unsubscribe;
-  };
+  }, [currentUser?.id]);
 
-  const sendMessage = async (receiverId: string, content: string, imageUrl?: string) => {
+  const sendMessage = useCallback(async (receiverId: string, content: string, imageUrl?: string) => {
     if (!currentUser || (!content.trim() && !imageUrl)) return;
     
     const participants = [currentUser.id, receiverId].sort();
@@ -2184,18 +2303,34 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     let receiverData;
     try {
       convSnap = await getDoc(convRef);
-      const receiverDoc = await getDoc(doc(db, 'users', receiverId));
-      receiverData = receiverDoc.data();
+      
+      // Try to get receiver data from conversation first, then from user doc
+      const existingName = convSnap.exists() ? convSnap.data()?.participantNames?.[receiverId] : null;
+      const existingImage = convSnap.exists() ? convSnap.data()?.participantImages?.[receiverId] : null;
+      
+      if (!existingName) {
+        try {
+          const receiverDoc = await getDoc(doc(db, 'users', receiverId));
+          if (receiverDoc.exists()) {
+            receiverData = receiverDoc.data();
+          }
+        } catch (userErr) {
+          console.warn("Could not fetch receiver profile:", userErr);
+          // Don't throw here, we'll use fallback values
+        }
+      } else {
+        receiverData = { name: existingName, profileImage: existingImage };
+      }
     } catch (e) {
-      handleFirestoreError(e, OperationType.GET, `conversations/${conversationId} or users/${receiverId}`);
-      return;
+      // If we can't even read the conversation, that's a bigger problem but we still shouldn't crash
+      console.error("Error fetching conversation metadata:", e);
     }
     
     const updateData = cleanData({
       participants,
       participantNames: {
         [currentUser.id]: currentUser.name,
-        [receiverId]: receiverData?.name || 'Unknown'
+        [receiverId]: receiverData?.name || receiverData?.storeName || 'User'
       },
       participantImages: {
         [currentUser.id]: currentUser.profileImage || '',
@@ -2228,7 +2363,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `conversations/${conversationId}`);
     }
-  };
+  }, [currentUser?.id, currentUser?.name, currentUser?.role, currentUser?.profileImage]);
 
   const submitReview = async (review: { productId?: string, vendorId?: string, rating: number, comment: string }) => {
     if (!currentUser) throw new Error('You must be logged in to submit a review');
@@ -2431,6 +2566,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       loading,
       fetchInvestmentOpportunities,
       createInvestmentOpportunity,
+      approveInvestmentOpportunity,
+      rejectInvestmentOpportunity,
       invest,
       fetchMyInvestments,
       fetchVendorInvestments,

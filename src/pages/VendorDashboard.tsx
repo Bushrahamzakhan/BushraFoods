@@ -30,19 +30,23 @@ export default function VendorDashboard() {
   } = useAppContext();
   const location = useLocation();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'products' | 'orders' | 'profile' | 'messages' | 'subscriptions' | 'groups' | 'investments' | 'payment_settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'profile' | 'messages' | 'subscriptions' | 'groups' | 'investments' | 'payment_settings'>('orders');
   const [selectedChatUserId, setSelectedChatUserId] = useState<string | null>(null);
   const [isAddingInvestment, setIsAddingInvestment] = useState(false);
   const [investmentFormData, setInvestmentFormData] = useState({
     productId: '',
+    productName: '',
+    description: '',
+    imageUrl: '',
     fundingGoal: '',
     totalUnits: '',
     profitSharingPct: '',
+    durationMonths: '12',
     riskLevel: 'medium',
     tiers: [
-      { name: 'Basic', amount: '', returnPct: '', estimatedEarnings: '' },
-      { name: 'Standard', amount: '', returnPct: '', estimatedEarnings: '' },
-      { name: 'Premium', amount: '', returnPct: '', estimatedEarnings: '' }
+      { id: 'tier-basic', name: 'Basic', amount: '', returnPct: '', estimatedEarnings: '' },
+      { id: 'tier-standard', name: 'Standard', amount: '', returnPct: '', estimatedEarnings: '' },
+      { id: 'tier-premium', name: 'Premium', amount: '', returnPct: '', estimatedEarnings: '' }
     ]
   });
 
@@ -246,7 +250,7 @@ export default function VendorDashboard() {
   });
 
   const renderDashboard = () => (
-    <div className="space-y-8">
+    <div className="space-y-8 mb-8">
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
@@ -295,84 +299,6 @@ export default function VendorDashboard() {
               <p className="text-2xl font-bold text-gray-900">{lowStockProducts.length}</p>
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Latest Orders Section */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <ShoppingBag className="w-5 h-5 text-green-600" />
-            <h3 className="text-lg font-bold text-gray-900">Latest Orders</h3>
-          </div>
-          <button onClick={() => setActiveTab('orders')} className="text-sm text-green-600 font-medium hover:underline">Manage All Orders</button>
-        </div>
-        <div className="p-6 space-y-6">
-          {myOrders.length === 0 ? (
-            <div className="text-center py-12">
-              <ShoppingBag className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-              <p className="text-gray-500">No orders yet.</p>
-            </div>
-          ) : (
-            myOrders.slice(0, 3).map(order => (
-              <div key={order.id} className="bg-gray-50 rounded-2xl overflow-hidden border border-gray-100 hover:border-green-200 transition-colors">
-                <div className="px-6 py-4 border-b border-gray-200/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-bold text-gray-900">Order #{order.id.slice(0, 8).toUpperCase()}</span>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-widest ${getStatusColor(order.status)}`}>
-                        {order.status}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500">{order.customerName} • {ensureDate(order.createdAt).toLocaleString()}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg font-black text-gray-900">{formatPrice(order.totalAmount, order.currency)}</p>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{order.items.length} {order.items.length === 1 ? 'Item' : 'Items'}</p>
-                  </div>
-                </div>
-                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    {order.items.map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-3">
-                        <img src={item.imageUrl} alt={item.productName} className="w-10 h-10 rounded-lg object-cover border border-gray-200" referrerPolicy="no-referrer" />
-                        <div className="flex-grow">
-                          <p className="text-sm font-bold text-gray-900 line-clamp-1">{item.productName}</p>
-                          <p className="text-xs text-gray-500">{item.quantity}x • {formatPrice(item.price, item.currency)}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex flex-col justify-center gap-3">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-gray-500 font-medium">Payment Status:</span>
-                      <span className={`font-bold uppercase ${
-                        order.paymentStatus === 'approved' ? 'text-green-600' : 
-                        order.paymentStatus === 'rejected' ? 'text-red-600' : 
-                        'text-blue-600'
-                      }`}>{getPaymentStatusDisplay(order.paymentStatus || 'pending')}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => setActiveTab('orders')}
-                        className="flex-grow py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        Manage Order
-                      </button>
-                      {order.paymentStatus === 'receipt_uploaded' && (
-                        <button 
-                          onClick={() => setActiveTab('orders')}
-                          className="flex-grow py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm"
-                        >
-                          Review Receipt
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
         </div>
       </div>
 
@@ -751,58 +677,52 @@ export default function VendorDashboard() {
           <p className="text-gray-500 mt-2">Manage your store: {currentUser.storeName}</p>
         </div>
         
-        <div className="flex bg-gray-100 p-1 rounded-lg">
-          <button 
-            onClick={() => setActiveTab('dashboard')}
-            className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'dashboard' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-          >
-            Dashboard
-          </button>
-          <button 
-            onClick={() => setActiveTab('products')}
-            className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'products' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-          >
-            Products
-          </button>
+        <div className="flex bg-gray-100 p-1 rounded-lg overflow-x-auto max-w-full">
           <button 
             onClick={() => setActiveTab('orders')}
-            className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'orders' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+            className={`px-6 py-2 rounded-md font-medium transition-colors whitespace-nowrap ${activeTab === 'orders' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
           >
             Orders
           </button>
           <button 
+            onClick={() => setActiveTab('products')}
+            className={`px-6 py-2 rounded-md font-medium transition-colors whitespace-nowrap ${activeTab === 'products' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+          >
+            Products
+          </button>
+          <button 
             onClick={() => setActiveTab('subscriptions')}
-            className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'subscriptions' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+            className={`px-6 py-2 rounded-md font-medium transition-colors whitespace-nowrap ${activeTab === 'subscriptions' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
           >
             Subscriptions
           </button>
           <button 
             onClick={() => setActiveTab('groups')}
-            className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'groups' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+            className={`px-6 py-2 rounded-md font-medium transition-colors whitespace-nowrap ${activeTab === 'groups' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
           >
             Group Buys
           </button>
           <button 
             onClick={() => setActiveTab('investments')}
-            className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'investments' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+            className={`px-6 py-2 rounded-md font-medium transition-colors whitespace-nowrap ${activeTab === 'investments' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
           >
             Investments
           </button>
           <button 
             onClick={() => setActiveTab('payment_settings')}
-            className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'payment_settings' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+            className={`px-6 py-2 rounded-md font-medium transition-colors whitespace-nowrap ${activeTab === 'payment_settings' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
           >
             Payments
           </button>
           <button 
             onClick={() => setActiveTab('profile')}
-            className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'profile' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+            className={`px-6 py-2 rounded-md font-medium transition-colors whitespace-nowrap ${activeTab === 'profile' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
           >
             Store Profile
           </button>
           <button 
             onClick={() => setActiveTab('messages')}
-            className={`px-6 py-2 rounded-md font-medium transition-colors ${activeTab === 'messages' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+            className={`px-6 py-2 rounded-md font-medium transition-colors whitespace-nowrap ${activeTab === 'messages' ? 'bg-white text-green-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
           >
             <div className="flex items-center gap-2">
               Messages
@@ -991,6 +911,7 @@ export default function VendorDashboard() {
                   fundingGoal: parseFloat(investmentFormData.fundingGoal),
                   totalUnits: parseInt(investmentFormData.totalUnits),
                   profitSharingPct: parseFloat(investmentFormData.profitSharingPct),
+                  durationMonths: parseInt(investmentFormData.durationMonths),
                   tiers: investmentFormData.tiers.map(t => ({
                     ...t,
                     amount: parseFloat(t.amount),
@@ -1001,14 +922,18 @@ export default function VendorDashboard() {
                 setIsAddingInvestment(false);
                 setInvestmentFormData({
                   productId: '',
+                  productName: '',
+                  description: '',
+                  imageUrl: '',
                   fundingGoal: '',
                   totalUnits: '',
                   profitSharingPct: '',
+                  durationMonths: '12',
                   riskLevel: 'medium',
                   tiers: [
-                    { name: 'Basic', amount: '', returnPct: '', estimatedEarnings: '' },
-                    { name: 'Standard', amount: '', returnPct: '', estimatedEarnings: '' },
-                    { name: 'Premium', amount: '', returnPct: '', estimatedEarnings: '' }
+                    { id: 'tier-basic', name: 'Basic', amount: '', returnPct: '', estimatedEarnings: '' },
+                    { id: 'tier-standard', name: 'Standard', amount: '', returnPct: '', estimatedEarnings: '' },
+                    { id: 'tier-premium', name: 'Premium', amount: '', returnPct: '', estimatedEarnings: '' }
                   ]
                 });
                 setSuccessMessage('Investment opportunity created successfully!');
@@ -1022,7 +947,16 @@ export default function VendorDashboard() {
                   <select 
                     required
                     value={investmentFormData.productId}
-                    onChange={(e) => setInvestmentFormData(prev => ({ ...prev, productId: e.target.value }))}
+                    onChange={(e) => {
+                      const product = myProducts.find(p => p.id === e.target.value);
+                      setInvestmentFormData(prev => ({ 
+                        ...prev, 
+                        productId: e.target.value,
+                        productName: product?.name || '',
+                        description: product?.description || '',
+                        imageUrl: product?.imageUrl || ''
+                      }));
+                    }}
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all"
                   >
                     <option value="">Choose a product...</option>
@@ -1064,6 +998,18 @@ export default function VendorDashboard() {
                     value={investmentFormData.profitSharingPct}
                     onChange={(e) => setInvestmentFormData(prev => ({ ...prev, profitSharingPct: e.target.value }))}
                     placeholder="e.g. 15"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 block">Duration (Months)</label>
+                  <input 
+                    type="number" 
+                    required
+                    value={investmentFormData.durationMonths}
+                    onChange={(e) => setInvestmentFormData(prev => ({ ...prev, durationMonths: e.target.value }))}
+                    placeholder="e.g. 12"
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all"
                   />
                 </div>
@@ -1219,57 +1165,37 @@ export default function VendorDashboard() {
         </div>
       )}
 
-      {/* Stats Overview - Only show on other tabs if needed, but we have a dedicated dashboard now */}
-      {activeTab !== 'dashboard' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
-            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-              <DollarSign className="w-6 h-6 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Total Revenue</p>
-              <p className="text-2xl font-bold text-gray-900">{formatPrice(totalRevenue, 'USD')}</p>
-            </div>
-          </div>
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
-            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-              <ShoppingBag className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Total Orders</p>
-              <p className="text-2xl font-bold text-gray-900">{totalOrders}</p>
-            </div>
-          </div>
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4">
-            <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-              <Package className="w-6 h-6 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 font-medium">Active Products</p>
-              <p className="text-2xl font-bold text-gray-900">{totalProducts}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Messages Tab */}
       {activeTab === 'messages' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[600px]">
-          <div className="lg:col-span-1 overflow-y-auto">
-            <ChatList onSelect={setSelectedChatUserId} activeUserId={selectedChatUserId || undefined} />
-          </div>
-          <div className="lg:col-span-2 h-full">
-            {selectedChatUserId ? (
-              <ChatWindow otherUserId={selectedChatUserId} onClose={() => setSelectedChatUserId(null)} />
-            ) : (
-              <div className="h-full bg-white rounded-2xl border border-gray-100 flex flex-col items-center justify-center text-center p-12">
-                <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center text-green-600 mb-4">
-                  <MessageSquare className="w-8 h-8" />
-                </div>
-                <h3 className="text-xl font-bold text-gray-900 mb-2">Select a conversation</h3>
-                <p className="text-gray-500">Pick a customer from the list to start chatting.</p>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-gray-100 h-[calc(100vh-250px)] min-h-[500px] max-h-[800px]">
+            {/* Chat List - Hidden on mobile if a chat is selected */}
+            <div className={`lg:col-span-1 flex flex-col h-full ${selectedChatUserId ? 'hidden lg:flex' : 'flex'}`}>
+              <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+                <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-emerald-600" />
+                  Conversations
+                </h3>
               </div>
-            )}
+              <div className="flex-grow overflow-y-auto">
+                <ChatList onSelect={setSelectedChatUserId} activeUserId={selectedChatUserId || undefined} />
+              </div>
+            </div>
+
+            {/* Chat Window - Hidden on mobile if no chat is selected */}
+            <div className={`lg:col-span-2 h-full flex flex-col ${!selectedChatUserId ? 'hidden lg:flex' : 'flex'}`}>
+              {selectedChatUserId ? (
+                <ChatWindow otherUserId={selectedChatUserId} onClose={() => setSelectedChatUserId(null)} />
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-center p-12 bg-gray-50/30">
+                  <div className="w-20 h-20 bg-white rounded-3xl shadow-sm flex items-center justify-center text-emerald-600 mb-6 border border-gray-100">
+                    <MessageSquare className="w-10 h-10" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">Vendor Messages</h3>
+                  <p className="text-gray-500 max-w-xs mx-auto">Select a customer from the list to start a conversation and discuss their orders.</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1652,6 +1578,10 @@ export default function VendorDashboard() {
       {/* Orders Tab */}
       {activeTab === 'orders' && (
         <div className="space-y-6">
+          {renderDashboard()}
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-bold text-gray-900">All Orders</h2>
+          </div>
           {myOrders.length === 0 ? (
             <div className="bg-white p-12 rounded-2xl shadow-sm border border-gray-100 text-center">
               <ShoppingBag className="w-16 h-16 text-gray-300 mx-auto mb-4" />

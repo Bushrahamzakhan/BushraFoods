@@ -14,10 +14,12 @@ import CustomerDashboard from './pages/CustomerDashboard';
 import InvestorDashboard from './pages/InvestorDashboard';
 import VendorsList from './pages/VendorsList';
 import VendorShop from './pages/VendorShop';
+import Investments from './pages/Investments';
 import About from './pages/About';
 import Help from './pages/Help';
 import Privacy from './pages/Privacy';
 import ErrorBoundary from './components/ErrorBoundary';
+import ScrollToTop from './components/ScrollToTop';
 import { AnimatePresence } from 'motion/react';
 
 function AppRoutes() {
@@ -46,6 +48,7 @@ function AppRoutes() {
         <Route path="/login" element={<Login />} />
         <Route path="/vendors" element={<Layout><VendorsList /></Layout>} />
         <Route path="/vendor/:id" element={<Layout><VendorShop /></Layout>} />
+        <Route path="/investments" element={<Layout><Investments /></Layout>} />
         <Route path="/about" element={<Layout><About /></Layout>} />
         <Route path="/help" element={<Layout><Help /></Layout>} />
         <Route path="/privacy" element={<Layout><Privacy /></Layout>} />
@@ -102,6 +105,7 @@ export default function App() {
     <ErrorBoundary>
       <AppProvider>
         <Router>
+          <ScrollToTop />
           <AppRoutes />
         </Router>
       </AppProvider>

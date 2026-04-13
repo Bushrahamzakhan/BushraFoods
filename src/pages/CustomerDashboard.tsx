@@ -1002,22 +1002,35 @@ export default function CustomerDashboard() {
           )}
 
           {activeTab === 'messages' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[600px]">
-              <div className="lg:col-span-1 overflow-y-auto">
-                <ChatList onSelect={setSelectedChatUserId} activeUserId={selectedChatUserId || undefined} />
-              </div>
-              <div className="lg:col-span-2 h-full">
-                {selectedChatUserId ? (
-                  <ChatWindow otherUserId={selectedChatUserId} onClose={() => setSelectedChatUserId(null)} />
-                ) : (
-                  <div className="h-full bg-white rounded-2xl border border-gray-100 flex flex-col items-center justify-center text-center p-12">
-                    <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center text-green-600 mb-4">
-                      <MessageSquare className="w-8 h-8" />
-                    </div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-2">Select a conversation</h3>
-                    <p className="text-gray-500">Pick a vendor from the list to start chatting.</p>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-gray-100 h-[calc(100vh-250px)] min-h-[500px] max-h-[800px]">
+                {/* Chat List - Hidden on mobile if a chat is selected */}
+                <div className={`lg:col-span-1 flex flex-col h-full ${selectedChatUserId ? 'hidden lg:flex' : 'flex'}`}>
+                  <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+                    <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                      <MessageSquare className="w-4 h-4 text-green-600" />
+                      Conversations
+                    </h3>
                   </div>
-                )}
+                  <div className="flex-grow overflow-y-auto">
+                    <ChatList onSelect={setSelectedChatUserId} activeUserId={selectedChatUserId || undefined} />
+                  </div>
+                </div>
+
+                {/* Chat Window - Hidden on mobile if no chat is selected */}
+                <div className={`lg:col-span-2 h-full flex flex-col ${!selectedChatUserId ? 'hidden lg:flex' : 'flex'}`}>
+                  {selectedChatUserId ? (
+                    <ChatWindow otherUserId={selectedChatUserId} onClose={() => setSelectedChatUserId(null)} />
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-center p-12 bg-gray-50/30">
+                      <div className="w-20 h-20 bg-white rounded-3xl shadow-sm flex items-center justify-center text-green-600 mb-6 border border-gray-100">
+                        <MessageSquare className="w-10 h-10" />
+                      </div>
+                      <h3 className="text-xl font-bold text-gray-900 mb-2">Your Messages</h3>
+                      <p className="text-gray-500 max-w-xs mx-auto">Select a vendor from the list to start a conversation and discuss your orders.</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

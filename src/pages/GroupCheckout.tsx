@@ -102,8 +102,8 @@ export default function GroupCheckout() {
         
         setIsProcessing(false);
         
-        if (completed) {
-          // Redirect to Order History for last member or completed group
+        if (completed || paymentMethod !== 'card') {
+          // Redirect to Order History for last member or manual payments
           navigate('/customer', { 
             state: { 
               activeTab: 'orders', 
@@ -111,7 +111,7 @@ export default function GroupCheckout() {
             } 
           });
         } else {
-          // Show success screen for non-last members
+          // Show success screen for non-last members with card payment
           setIsSuccess(true);
         }
       } catch (error: any) {

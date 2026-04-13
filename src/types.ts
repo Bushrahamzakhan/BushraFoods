@@ -2,7 +2,7 @@ import { Timestamp } from 'firebase/firestore';
 
 export type UserRole = 'buyer' | 'seller' | 'admin' | 'vendor' | 'customer' | 'investor' | 'moderator' | 'support';
 export type Role = UserRole;
-export type OrderStatus = 'pending' | 'processing' | 'preparing' | 'shipped' | 'delivered' | 'cancelled' | 'confirmed' | 'refunded' | 'payment_rejected';
+export type OrderStatus = 'pending' | 'processing' | 'preparing' | 'shipped' | 'delivered' | 'cancelled' | 'confirmed' | 'refunded' | 'payment_rejected' | 'awaiting_group';
 export type PaymentStatus = 'pending' | 'receipt_uploaded' | 'under_review' | 'approved' | 'rejected';
 export type PaymentMethodType = 'card' | 'alipay' | 'wechat' | 'bank_transfer' | 'easypaisa' | 'payoneer' | 'paypal' | 'other';
 export type VariationType = { name: string; options: string[] };
@@ -193,6 +193,7 @@ export interface ChatMessage {
 }
 
 export interface ChatConversation {
+  id: string;
   otherUserId: string;
   otherUserName: string;
   otherUserProfileImage?: string;
@@ -264,13 +265,16 @@ export interface InvestmentOpportunity {
   id: string;
   productId: string;
   productName: string;
+  description: string;
+  imageUrl?: string;
   vendorId: string;
   fundingGoal: number;
   currentFunding: number;
   totalUnits: number;
   profitSharingPct: number;
+  durationMonths: number;
   riskLevel: 'low' | 'medium' | 'high';
-  status: 'active' | 'completed' | 'cancelled';
+  status: 'pending' | 'active' | 'completed' | 'cancelled';
   createdAt: string;
   tiers: InvestmentTier[];
 }

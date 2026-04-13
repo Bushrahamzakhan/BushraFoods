@@ -215,7 +215,7 @@ export default function Layout({ children }: { children?: React.ReactNode }) {
               </div>
               
               <Link to="/vendors" className="hover:outline hover:outline-1 hover:outline-white p-1 rounded-sm font-bold text-green-400 flex-shrink-0">Our Vendors</Link>
-              <Link to="/investor" state={{ activeTab: 'opportunities' }} className="hover:outline hover:outline-1 hover:outline-white p-1 rounded-sm flex-shrink-0 text-amber-400 font-bold flex items-center gap-1">
+              <Link to="/investments" className="hover:outline hover:outline-1 hover:outline-white p-1 rounded-sm flex-shrink-0 text-amber-400 font-bold flex items-center gap-1">
                 <TrendingUp className="w-4 h-4" /> Investment Opportunities
               </Link>
               <Link to="/" className="hover:outline hover:outline-1 hover:outline-white p-1 rounded-sm flex-shrink-0">Today's Deals</Link>
