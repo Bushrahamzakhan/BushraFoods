@@ -268,13 +268,14 @@ export interface InvestmentOpportunity {
   description: string;
   imageUrl?: string;
   vendorId: string;
+  vendorName?: string;
   fundingGoal: number;
   currentFunding: number;
   totalUnits: number;
   profitSharingPct: number;
   durationMonths: number;
   riskLevel: 'low' | 'medium' | 'high';
-  status: 'pending' | 'active' | 'completed' | 'cancelled';
+  status: 'pending' | 'active' | 'funded' | 'completed' | 'cancelled';
   createdAt: string;
   tiers: InvestmentTier[];
 }

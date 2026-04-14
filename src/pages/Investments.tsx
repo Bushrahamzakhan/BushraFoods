@@ -1,20 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { TrendingUp, DollarSign, Clock, CheckCircle, ChevronRight, Info, ShieldCheck, BarChart3, Users, ArrowRight } from 'lucide-react';
+import { TrendingUp, DollarSign, Clock, CheckCircle, ChevronRight, Info, ShieldCheck, BarChart3, Users, ArrowRight, MessageCircle } from 'lucide-react';
 import { motion } from 'motion/react';
-import { InvestmentOpportunity, InvestmentTier } from '../types';
+import { InvestmentOpportunity, InvestmentTier, User } from '../types';
 import { Link, useNavigate } from 'react-router-dom';
 
 export default function Investments() {
-  const { investmentOpportunities, currentUser, invest, formatPrice: contextFormatPrice } = useAppContext();
+  const { investmentOpportunities, currentUser, invest, formatPrice: contextFormatPrice, setActiveChatUserId, admins } = useAppContext();
   const navigate = useNavigate();
   const [selectedOpportunity, setSelectedOpportunity] = useState<InvestmentOpportunity | null>(null);
   const [selectedTier, setSelectedTier] = useState<InvestmentTier | null>(null);
   const [isInvesting, setIsInvesting] = useState(false);
   const [investmentSuccess, setInvestmentSuccess] = useState(false);
 
-  // Filter only active opportunities for public view
-  const activeOpportunities = investmentOpportunities.filter(opp => opp.status === 'active');
+  // Filter active and funded opportunities for public view
+  const visibleOpportunities = investmentOpportunities.filter(opp => 
+    opp.status === 'active' || opp.status === 'funded'
+  );
+
+  const handleChatWithVendor = (vendorId: string) => {
+    if (!currentUser) {
+      navigate('/login', { state: { from: '/investments' } });
+      return;
+    }
+    setActiveChatUserId(vendorId);
+    navigate('/dashboard?tab=messages');
+  };
 
   const handleInvest = async () => {
     if (!currentUser) {
@@ -122,9 +133,9 @@ export default function Investments() {
           </div>
         </div>
 
-        {activeOpportunities.length > 0 ? (
+        {visibleOpportunities.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {activeOpportunities.map((opp) => (
+            {visibleOpportunities.map((opp) => (
               <motion.div 
                 key={opp.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -139,13 +150,30 @@ export default function Investments() {
                     className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                     referrerPolicy="no-referrer"
                   />
-                  <div className="absolute top-4 right-4 px-3 py-1 bg-white/90 backdrop-blur-sm rounded-full text-xs font-bold text-emerald-700 shadow-sm">
-                    {opp.profitSharingPct}% ROI
+                  <div className="absolute top-4 right-4 flex flex-col gap-2">
+                    <div className="px-3 py-1 bg-white/90 backdrop-blur-sm rounded-full text-xs font-bold text-emerald-700 shadow-sm">
+                      {opp.profitSharingPct}% ROI
+                    </div>
+                    {opp.status === 'funded' && (
+                      <div className="px-3 py-1 bg-blue-500 rounded-full text-xs font-bold text-white shadow-sm text-center">
+                        Fully Funded
+                      </div>
+                    )}
                   </div>
                 </div>
                 
                 <div className="p-6">
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">{opp.productName}</h3>
+                  <div className="flex justify-between items-start mb-1">
+                    <h3 className="text-xl font-bold text-gray-900">{opp.productName}</h3>
+                    <button 
+                      onClick={() => handleChatWithVendor(opp.vendorId)}
+                      className="p-2 bg-gray-50 hover:bg-emerald-50 text-gray-400 hover:text-emerald-600 rounded-xl transition-all"
+                      title="Chat with Vendor"
+                    >
+                      <MessageCircle className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <p className="text-xs text-emerald-600 font-bold mb-3">By {opp.vendorName || 'Verified Vendor'}</p>
                   <p className="text-sm text-gray-500 mb-6 line-clamp-2">{opp.description}</p>
                   
                   <div className="space-y-4 mb-8">
@@ -161,7 +189,7 @@ export default function Investments() {
                     </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-emerald-600 font-bold">{Math.round((opp.currentFunding / opp.fundingGoal) * 100)}% Funded</span>
-                      <span className="text-gray-400">{contextFormatPrice(opp.fundingGoal - opp.currentFunding)} remaining</span>
+                      <span className="text-gray-400">{contextFormatPrice(Math.max(0, opp.fundingGoal - opp.currentFunding))} remaining</span>
                     </div>
                   </div>
                   
@@ -178,9 +206,16 @@ export default function Investments() {
                   
                   <button 
                     onClick={() => setSelectedOpportunity(opp)}
-                    className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold hover:bg-gray-800 transition-all flex items-center justify-center gap-2"
+                    disabled={opp.status === 'funded'}
+                    className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 ${
+                      opp.status === 'funded'
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-gray-900 text-white hover:bg-gray-800'
+                    }`}
                   >
-                    Invest Now <ChevronRight className="w-4 h-4" />
+                    {opp.status === 'funded' ? 'Opportunity Closed' : (
+                      <>Invest Now <ChevronRight className="w-4 h-4" /></>
+                    )}
                   </button>
                 </div>
               </motion.div>

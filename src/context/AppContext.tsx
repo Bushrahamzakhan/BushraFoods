@@ -1283,6 +1283,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const newOpportunity = cleanData({
         ...data,
         vendorId: currentUser.id,
+        vendorName: currentUser.storeName || currentUser.name,
         currentFunding: 0,
         status: 'pending',
         createdAt: serverTimestamp()
@@ -1391,18 +1392,33 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       await addDoc(collection(db, 'investments'), newInvestment);
       try {
+        const newFunding = (oppData.currentFunding || 0) + tier.amount;
+        const isFullyFunded = newFunding >= oppData.fundingGoal;
+        
         await updateDoc(oppRef, {
-          currentFunding: increment(tier.amount)
+          currentFunding: increment(tier.amount),
+          status: isFullyFunded ? 'funded' : oppData.status
         });
 
         // Notify Vendor
         await sendNotification(
           oppData.vendorId,
           'New Investment Received',
-          `${currentUser.name} has invested ${formatPrice(tier.amount, 'USD')} in your opportunity for ${oppData.productName}.`,
+          `${currentUser.name} has invested ${formatPrice(tier.amount, 'USD')} in your opportunity for ${oppData.productName}.${isFullyFunded ? ' Your opportunity is now fully funded!' : ''}`,
           'payment',
           '/vendor'
         );
+
+        // Notify Admins
+        for (const admin of admins) {
+          await sendNotification(
+            admin.id,
+            'New Investment Made',
+            `${currentUser.name} (Investor) has invested ${formatPrice(tier.amount, 'USD')} in ${oppData.productName} (Vendor: ${oppData.vendorName || 'Vendor'}).${isFullyFunded ? ' This opportunity is now fully funded!' : ''}`,
+            'payment',
+            '/admin?tab=investments'
+          );
+        }
       } catch (e) {
         handleFirestoreError(e, OperationType.UPDATE, `investmentOpportunities/${opportunityId}`);
       }
@@ -2349,6 +2365,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         await updateDoc(convRef, updateData);
       } else {
         await setDoc(convRef, updateData);
+
+        // Notify Admins if an investor initiates a chat with a vendor
+        if (currentUser.role === 'investor' && receiverData?.role === 'vendor') {
+          for (const admin of admins) {
+            await sendNotification(
+              admin.id,
+              'New Investor-Vendor Chat',
+              `${currentUser.name} (Investor) has initiated a chat with ${receiverData.name || receiverData.storeName} (Vendor) regarding an investment opportunity.`,
+              'message',
+              `/admin?tab=messages`
+            );
+          }
+        }
       }
 
       // Notify recipient
