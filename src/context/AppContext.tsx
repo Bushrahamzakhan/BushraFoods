@@ -230,6 +230,7 @@ interface AppContextType {
   fetchConversations: () => Promise<void>;
   fetchMessages: (otherUserId: string) => (() => void);
   sendMessage: (receiverId: string, content: string, imageUrl?: string) => Promise<void>;
+  clearChat: (otherUserId: string) => Promise<void>;
   fetchProductReviews: (productId: string) => Promise<Review[]>;
   fetchVendorReviews: (vendorId: string) => Promise<Review[]>;
   submitReview: (review: { productId?: string, vendorId?: string, rating: number, comment: string }) => Promise<void>;
@@ -2392,7 +2393,36 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     } catch (e) {
       handleFirestoreError(e, OperationType.WRITE, `conversations/${conversationId}`);
     }
-  }, [currentUser?.id, currentUser?.name, currentUser?.role, currentUser?.profileImage]);
+  }, [currentUser, admins, sendNotification]);
+
+  const clearChat = useCallback(async (otherUserId: string) => {
+    if (!currentUser) return;
+    
+    const participants = [currentUser.id, otherUserId].sort();
+    const conversationId = participants.join('_');
+    
+    try {
+      const messagesRef = collection(db, 'conversations', conversationId, 'messages');
+      const q = query(messagesRef);
+      const snapshot = await getDocs(q);
+      
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      
+      // Also update the conversation metadata to clear last message
+      const convRef = doc(db, 'conversations', conversationId);
+      batch.update(convRef, {
+        lastMessage: null,
+        updatedAt: serverTimestamp()
+      });
+      
+      await batch.commit();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `conversations/${conversationId}/messages`);
+    }
+  }, [currentUser]);
 
   const submitReview = async (review: { productId?: string, vendorId?: string, rating: number, comment: string }) => {
     if (!currentUser) throw new Error('You must be logged in to submit a review');
@@ -2578,6 +2608,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       fetchConversations,
       fetchMessages,
       sendMessage,
+      clearChat,
       fetchProductReviews,
       fetchVendorReviews,
       submitReview,

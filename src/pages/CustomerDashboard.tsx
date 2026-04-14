@@ -1002,23 +1002,23 @@ export default function CustomerDashboard() {
           )}
 
           {activeTab === 'messages' && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-gray-100 h-[calc(100vh-250px)] min-h-[500px] max-h-[800px]">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[500px] sm:h-[600px] lg:h-[700px] max-h-[calc(100vh-250px)]">
+              <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-gray-100 flex-1 min-h-0">
                 {/* Chat List - Hidden on mobile if a chat is selected */}
-                <div className={`lg:col-span-1 flex flex-col h-full ${selectedChatUserId ? 'hidden lg:flex' : 'flex'}`}>
-                  <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+                <div className={`lg:col-span-1 flex flex-col h-full overflow-hidden ${selectedChatUserId ? 'hidden lg:flex' : 'flex'}`}>
+                  <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex-none">
                     <h3 className="font-bold text-gray-900 flex items-center gap-2">
                       <MessageSquare className="w-4 h-4 text-green-600" />
                       Conversations
                     </h3>
                   </div>
-                  <div className="flex-grow overflow-y-auto">
+                  <div className="flex-1 overflow-y-auto min-h-0">
                     <ChatList onSelect={setSelectedChatUserId} activeUserId={selectedChatUserId || undefined} />
                   </div>
                 </div>
 
                 {/* Chat Window - Hidden on mobile if no chat is selected */}
-                <div className={`lg:col-span-2 h-full flex flex-col ${!selectedChatUserId ? 'hidden lg:flex' : 'flex'}`}>
+                <div className={`lg:col-span-2 h-full flex flex-col min-h-0 ${!selectedChatUserId ? 'hidden lg:flex' : 'flex'}`}>
                   {selectedChatUserId ? (
                     <ChatWindow otherUserId={selectedChatUserId} onClose={() => setSelectedChatUserId(null)} />
                   ) : (
